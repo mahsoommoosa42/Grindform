@@ -103,8 +103,7 @@ const DEFAULT_DAYS: readonly DayConfig[] = [
 
 const titleCase = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ');
 
-const weekdayLabel = (w: Weekday): string =>
-  WEEKDAYS.find((d) => d.id === w)?.label ?? w;
+const weekdayLabel = (w: Weekday): string => WEEKDAYS.find((d) => d.id === w)?.label ?? w;
 
 /** The whole Grindform UI. */
 export class GfApp extends LitElement {
@@ -345,8 +344,11 @@ export class GfApp extends LitElement {
         </nav>
         <label class="theme">
           <span class="sr-only">Theme</span>
-          <select data-testid="theme-picker" .value=${this.theme} @change=${this.onThemeChange}>
-            ${THEMES.map((t) => html`<option value=${t.id}>${t.label}</option>`)}
+          <select data-testid="theme-picker" @change=${this.onThemeChange}>
+            ${THEMES.map(
+              (t) =>
+                html`<option value=${t.id} ?selected=${t.id === this.theme}>${t.label}</option>`,
+            )}
           </select>
         </label>
       </header>
@@ -367,12 +369,14 @@ export class GfApp extends LitElement {
             <span>Goal</span>
             <select
               data-testid="goal"
-              .value=${this.goal}
               @change=${(e: Event) => {
                 this.goal = (e.target as HTMLSelectElement).value as Goal;
               }}
             >
-              ${GOALS.map((g) => html`<option value=${g.id}>${g.label}</option>`)}
+              ${GOALS.map(
+                (g) =>
+                  html`<option value=${g.id} ?selected=${g.id === this.goal}>${g.label}</option>`,
+              )}
             </select>
           </label>
 
@@ -380,12 +384,16 @@ export class GfApp extends LitElement {
             <span>Experience</span>
             <select
               data-testid="experience"
-              .value=${this.experience}
               @change=${(e: Event) => {
                 this.experience = (e.target as HTMLSelectElement).value as Experience;
               }}
             >
-              ${EXPERIENCES.map((x) => html`<option value=${x}>${titleCase(x)}</option>`)}
+              ${EXPERIENCES.map(
+                (x) =>
+                  html`<option value=${x} ?selected=${x === this.experience}>
+                    ${titleCase(x)}
+                  </option>`,
+              )}
             </select>
           </label>
 
@@ -393,13 +401,12 @@ export class GfApp extends LitElement {
             <span>Variation</span>
             <select
               data-testid="variation"
-              .value=${this.variation}
               @change=${(e: Event) => {
                 this.variation = (e.target as HTMLSelectElement).value as 'A' | 'B';
               }}
             >
-              <option value="A">A week</option>
-              <option value="B">B week</option>
+              <option value="A" ?selected=${this.variation === 'A'}>A week</option>
+              <option value="B" ?selected=${this.variation === 'B'}>B week</option>
             </select>
           </label>
         </div>
@@ -482,15 +489,16 @@ export class GfApp extends LitElement {
           <strong>${weekdayLabel(day.weekday)}</strong>
           <select
             data-testid=${`day-mode-${day.weekday}`}
-            .value=${day.mode}
             @change=${(e: Event) =>
               this.setDayMode(
                 day.weekday,
                 (e.target as HTMLSelectElement).value as 'train' | DayActivity,
               )}
           >
-            <option value="train">Training</option>
-            ${ACTIVITIES.map((a) => html`<option value=${a}>${titleCase(a)}</option>`)}
+            <option value="train" ?selected=${day.mode === 'train'}>Training</option>
+            ${ACTIVITIES.map(
+              (a) => html`<option value=${a} ?selected=${day.mode === a}>${titleCase(a)}</option>`,
+            )}
           </select>
         </div>
         ${day.mode === 'train'
@@ -511,7 +519,9 @@ export class GfApp extends LitElement {
                 )}
               </div>
             `
-          : html`<p class="blocked-note">Blocked for ${titleCase(day.mode)} — no lifting generated.</p>`}
+          : html`<p class="blocked-note">
+              Blocked for ${titleCase(day.mode)} — no lifting generated.
+            </p>`}
       </div>
     `;
   }
@@ -551,15 +561,12 @@ export class GfApp extends LitElement {
               <p class="focus">${day.focus.map((m) => titleCase(m)).join(' · ')}</p>
               <ul class="blocks">
                 ${day.blocks.map(
-                  (b) => html`<li><span class="btag ${b.type}">${b.title}</span> ${b.estMinutes}m</li>`,
+                  (b) =>
+                    html`<li><span class="btag ${b.type}">${b.title}</span> ${b.estMinutes}m</li>`,
                 )}
               </ul>
               ${prog !== undefined
-                ? html`<div
-                    class="bar"
-                    data-testid=${`bar-${day.weekday}`}
-                    aria-label="progress"
-                  >
+                ? html`<div class="bar" data-testid=${`bar-${day.weekday}`} aria-label="progress">
                     <span style=${`width:${prog.percentComplete}%`}></span>
                   </div>`
                 : nothing}
@@ -593,18 +600,13 @@ export class GfApp extends LitElement {
                 </div>
                 <p class="pct" data-testid="tracker-pct">${prog.percentComplete}% complete</p>`
             : nothing}
-          <div class="track-list">
-            ${day.blocks.map((b) => this.renderTrackBlock(day.id, b))}
-          </div>
+          <div class="track-list">${day.blocks.map((b) => this.renderTrackBlock(day.id, b))}</div>
         </div>
       </div>
     `;
   }
 
-  private renderTrackBlock(
-    dayId: string,
-    block: PlanDay['blocks'][number],
-  ): TemplateResult {
+  private renderTrackBlock(dayId: string, block: PlanDay['blocks'][number]): TemplateResult {
     if (block.slots.length === 0) {
       return html`<div class="track-block">
         <h3>${block.title}</h3>

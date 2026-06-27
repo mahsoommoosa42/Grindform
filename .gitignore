@@ -52,3 +52,6 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+
+# generated client bundle (built by bun; rebuilt in CI/Docker)
+packages/web/public/app/

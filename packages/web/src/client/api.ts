@@ -6,13 +6,7 @@
  * `{ code, message }` envelope, so UI code can surface a useful message.
  */
 
-import type {
-  DayProgress,
-  GeneratePlanRequest,
-  Settings,
-  ThemeId,
-  WeeklyPlan,
-} from './types.ts';
+import type { DayProgress, GeneratePlanRequest, Settings, ThemeId, WeeklyPlan } from './types.ts';
 
 /** An error raised when the API responds with a non-2xx status. */
 export class ApiError extends Error {
