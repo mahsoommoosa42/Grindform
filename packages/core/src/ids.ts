@@ -130,3 +130,43 @@ export const parseExerciseSlug = (s: string): ExerciseSlug => {
   if (!isExerciseSlug(s)) throw new Error(`invalid ExerciseSlug: ${s}`);
   return s;
 };
+
+/**
+ * Validate `s` and return it branded as a {@link UserId}.
+ *
+ * @throws Error if `s` is not a syntactically-valid user ID.
+ */
+export const parseUserId = (s: string): UserId => {
+  if (!isUserId(s)) throw new Error(`invalid UserId: ${s}`);
+  return s;
+};
+
+/**
+ * Validate `s` and return it branded as a {@link DayId}.
+ *
+ * @throws Error if `s` is not a syntactically-valid day ID.
+ */
+export const parseDayId = (s: string): DayId => {
+  if (!isDayId(s)) throw new Error(`invalid DayId: ${s}`);
+  return s;
+};
+
+/**
+ * Validate `s` and return it branded as a {@link SlotId}.
+ *
+ * @throws Error if `s` is not a syntactically-valid slot ID.
+ */
+export const parseSlotId = (s: string): SlotId => {
+  if (!isSlotId(s)) throw new Error(`invalid SlotId: ${s}`);
+  return s;
+};
+
+/**
+ * Validate `s` and return it branded as a {@link LogId}.
+ *
+ * @throws Error if `s` is not a syntactically-valid log ID.
+ */
+export const parseLogId = (s: string): LogId => {
+  if (!isLogId(s)) throw new Error(`invalid LogId: ${s}`);
+  return s;
+};

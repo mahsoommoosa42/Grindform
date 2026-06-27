@@ -15,6 +15,26 @@
         "vitest": "2.1.8",
       },
     },
+    "packages/api": {
+      "name": "@grindform/api",
+      "version": "0.1.0",
+      "dependencies": {
+        "@grindform/catalog": "workspace:*",
+        "@grindform/core": "workspace:*",
+        "@grindform/db": "workspace:*",
+        "@grindform/planner": "workspace:*",
+        "@grindform/tracker": "workspace:*",
+        "hono": "4.6.14",
+        "zod": "3.25.63",
+      },
+      "devDependencies": {
+        "@electric-sql/pglite": "0.2.14",
+        "@vitest/coverage-v8": "2.1.8",
+        "drizzle-orm": "0.36.4",
+        "typescript": "5.7.2",
+        "vitest": "2.1.8",
+      },
+    },
     "packages/catalog": {
       "name": "@grindform/catalog",
       "version": "0.1.0",
@@ -161,6 +181,8 @@
     "@eslint/object-schema": ["@eslint/object-schema@2.1.7", "", {}, "sha512-VtAOaymWVfZcmZbp6E2mympDIHvyjXs/12LqWYjVw6qjrfF+VK+fyG33kChz3nnK+SU5/NeHOqrTEHS8sXO3OA=="],
 
     "@eslint/plugin-kit": ["@eslint/plugin-kit@0.2.8", "", { "dependencies": { "@eslint/core": "^0.13.0", "levn": "^0.4.1" } }, "sha512-ZAoA40rNMPwSm+AeHpCq8STiNAwzWLJuP8Xv4CHIc9wv/PSuExjMrmjfYNj682vW0OOiZ1HKxzvjQr9XZIisQA=="],
+
+    "@grindform/api": ["@grindform/api@workspace:packages/api"],
 
     "@grindform/catalog": ["@grindform/catalog@workspace:packages/catalog"],
 
@@ -399,6 +421,8 @@
     "graphemer": ["graphemer@1.4.0", "", {}, "sha512-EtKwoO6kxCL9WO5xipiHTZlSzBm7WLT627TqC/uVRd0HKmq8NXyebnNYxDoBi7wt8eTWrUrKXCOVaFq9x1kgag=="],
 
     "has-flag": ["has-flag@4.0.0", "", {}, "sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ=="],
+
+    "hono": ["hono@4.6.14", "", {}, "sha512-j4VkyUp2xazGJ8eCCLN1Vm/bxdvm/j5ZuU9AIjLu9vapn2M44p9L3Ktr9Vnb2RN2QtcR/wVjZVMlT5k7GJQgPw=="],
 
     "html-escaper": ["html-escaper@2.0.2", "", {}, "sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg=="],
 

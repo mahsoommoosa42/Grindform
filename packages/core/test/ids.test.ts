@@ -12,8 +12,12 @@ import {
   newPlanId,
   newSlotId,
   newUserId,
+  parseDayId,
   parseExerciseSlug,
+  parseLogId,
   parsePlanId,
+  parseSlotId,
+  parseUserId,
 } from '../src/ids.ts';
 
 describe('id factories produce prefixed, well-formed, sortable IDs', () => {
@@ -87,5 +91,23 @@ describe('throwing parsers', () => {
 
   it('parsePlanId throws for invalid input', () => {
     expect(() => parsePlanId('nope')).toThrow('invalid PlanId: nope');
+  });
+
+  it('parseUserId / parseDayId / parseSlotId / parseLogId round-trip valid ids', () => {
+    const user = newUserId();
+    const day = newDayId();
+    const slot = newSlotId();
+    const log = newLogId();
+    expect(parseUserId(user)).toBe(user);
+    expect(parseDayId(day)).toBe(day);
+    expect(parseSlotId(slot)).toBe(slot);
+    expect(parseLogId(log)).toBe(log);
+  });
+
+  it('parseUserId / parseDayId / parseSlotId / parseLogId throw on bad input', () => {
+    expect(() => parseUserId('nope')).toThrow('invalid UserId: nope');
+    expect(() => parseDayId('nope')).toThrow('invalid DayId: nope');
+    expect(() => parseSlotId('nope')).toThrow('invalid SlotId: nope');
+    expect(() => parseLogId('nope')).toThrow('invalid LogId: nope');
   });
 });
