@@ -61,9 +61,9 @@ const ensureBookkeeping = async (db: DbOrTx): Promise<void> => {
 
 /** Return the set of migration names already applied. */
 const listApplied = async (db: DbOrTx): Promise<Set<string>> => {
-  const result = (await db.execute(
-    sql.raw(`SELECT name FROM ${MIGRATIONS_TABLE}`),
-  )) as unknown as { rows: ReadonlyArray<{ name: string }> };
+  const result = (await db.execute(sql.raw(`SELECT name FROM ${MIGRATIONS_TABLE}`))) as unknown as {
+    rows: ReadonlyArray<{ name: string }>;
+  };
   return new Set(result.rows.map((r) => r.name));
 };
 

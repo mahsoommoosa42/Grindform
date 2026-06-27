@@ -194,7 +194,12 @@ describe('generatePlan — selection edge cases', () => {
       generatePlan(
         parse({
           goal: 'build_muscle',
-          timeBudget: { sessionMinutes: 28, warmupMinutes: 8, cooldownMinutes: 0, physioMinutes: 0 },
+          timeBudget: {
+            sessionMinutes: 28,
+            warmupMinutes: 8,
+            cooldownMinutes: 0,
+            physioMinutes: 0,
+          },
           days: [{ weekday: 'mon', focus: ['glutes', 'back'] }],
         }),
       ),
@@ -215,7 +220,10 @@ describe('generatePlan — selection edge cases', () => {
   it('attaches a label to a training day when provided', () => {
     const plan = expectOk(
       generatePlan(
-        parse({ goal: 'recomp', days: [{ weekday: 'mon', focus: ['glutes'], label: 'Glute day' }] }),
+        parse({
+          goal: 'recomp',
+          days: [{ weekday: 'mon', focus: ['glutes'], label: 'Glute day' }],
+        }),
       ),
     );
     expect(trainingDay(plan).label).toBe('Glute day');
@@ -225,7 +233,11 @@ describe('generatePlan — selection edge cases', () => {
 describe('generatePlan — impossible constraints', () => {
   it('fails when no exercise matches the equipment for a focus', () => {
     const result = generatePlan(
-      parse({ goal: 'build_muscle', equipment: ['band'], days: [{ weekday: 'mon', focus: ['quads'] }] }),
+      parse({
+        goal: 'build_muscle',
+        equipment: ['band'],
+        days: [{ weekday: 'mon', focus: ['quads'] }],
+      }),
     );
     expect(isErr(result)).toBe(true);
     if (isErr(result)) {

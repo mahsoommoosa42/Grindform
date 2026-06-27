@@ -3,12 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { newDayId, newLogId, newSlotId, parseExerciseSlug } from '@grindform/core';
 
 import type { Db } from '../src/client.ts';
-import {
-  deleteLog,
-  listLogsForDay,
-  listLogsForExercise,
-  logSet,
-} from '../src/repos/logs-repo.ts';
+import { deleteLog, listLogsForDay, listLogsForExercise, logSet } from '../src/repos/logs-repo.ts';
 import { freshDb } from './helpers/db.ts';
 
 const slug = parseExerciseSlug('back-squat');

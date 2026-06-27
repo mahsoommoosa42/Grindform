@@ -39,11 +39,7 @@ const mapDay = (row: PlanDayRow): PlanDay => ({
 });
 
 /** Insert a plan and all its days in a single transaction. */
-export const createPlan = async (
-  db: DbOrTx,
-  userId: UserId,
-  plan: WeeklyPlan,
-): Promise<void> => {
+export const createPlan = async (db: DbOrTx, userId: UserId, plan: WeeklyPlan): Promise<void> => {
   await db.transaction(async (tx) => {
     await tx.insert(plans).values({
       id: plan.id,

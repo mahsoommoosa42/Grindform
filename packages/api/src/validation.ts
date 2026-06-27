@@ -8,7 +8,6 @@
  */
 
 import { z } from 'zod';
-import type { ZodType } from 'zod';
 
 import {
   EquipmentSchema,
@@ -26,7 +25,11 @@ import {
 import type { DayId, SlotId } from '@grindform/core';
 
 /** Parse `data` with `schema`, throwing a 400-mapped error on failure. */
-export const parseOrThrow = <T>(schema: ZodType<T>, data: unknown, what: string): T => {
+export const parseOrThrow = <S extends z.ZodTypeAny>(
+  schema: S,
+  data: unknown,
+  what: string,
+): z.output<S> => {
   const result = schema.safeParse(data);
   if (!result.success) {
     throw new ValidationError(`invalid ${what}`, { issues: result.error.issues });

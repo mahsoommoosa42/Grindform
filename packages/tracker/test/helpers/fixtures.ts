@@ -5,12 +5,7 @@
  * logged sets, with sensible defaults that individual tests override.
  */
 
-import {
-  newDayId,
-  newLogId,
-  newSlotId,
-  parseExerciseSlug,
-} from '@grindform/core';
+import { newDayId, newLogId, newSlotId, parseExerciseSlug } from '@grindform/core';
 import type { RepScheme } from '@grindform/core';
 import type { ExerciseSlot, PlanDay } from '@grindform/planner';
 import type { SetLog } from '@grindform/db';

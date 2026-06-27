@@ -191,7 +191,10 @@ export type DaySpec = z.infer<typeof DaySpecSchema>;
 export const GeneratePlanInputSchema = z.object({
   goal: GoalSchema,
   experience: ExperienceSchema.default('intermediate'),
-  equipment: z.array(EquipmentSchema).min(1).default([...EquipmentSchema.options]),
+  equipment: z
+    .array(EquipmentSchema)
+    .min(1)
+    .default([...EquipmentSchema.options]),
   timeBudget: TimeBudgetSchema.default({
     sessionMinutes: 60,
     warmupMinutes: 8,

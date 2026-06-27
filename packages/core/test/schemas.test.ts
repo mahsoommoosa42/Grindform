@@ -101,9 +101,7 @@ describe('GeneratePlanInputSchema', () => {
   });
 
   it('rejects an empty days array', () => {
-    expect(
-      GeneratePlanInputSchema.safeParse({ goal: 'recomp', days: [] }).success,
-    ).toBe(false);
+    expect(GeneratePlanInputSchema.safeParse({ goal: 'recomp', days: [] }).success).toBe(false);
   });
 
   it('rejects more than seven days', () => {

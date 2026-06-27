@@ -10,7 +10,7 @@ interface PlanResponse {
   };
 }
 
-const json = (app: Hono, path: string, method: string, body: unknown): Promise<Response> =>
+const json = async (app: Hono, path: string, method: string, body: unknown): Promise<Response> =>
   app.request(path, {
     method,
     headers: { 'content-type': 'application/json' },
@@ -229,9 +229,7 @@ describe('Grindform API', () => {
 
     it('returns 404 progress for a day not in the plan', async () => {
       const plan = await createSamplePlan(app);
-      const res = await app.request(
-        `/v1/plans/${plan.id}/days/day_${'0'.repeat(26)}/progress`,
-      );
+      const res = await app.request(`/v1/plans/${plan.id}/days/day_${'0'.repeat(26)}/progress`);
       expect(res.status).toBe(404);
     });
 

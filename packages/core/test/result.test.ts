@@ -61,7 +61,7 @@ describe('unwrap helpers', () => {
 
   it('unwrapOr returns the value on ok and the fallback on err', () => {
     expect(unwrapOr(ok(1), 9)).toBe(1);
-    expect(unwrapOr(err<number>('e') as never, 9)).toBe(9);
+    expect(unwrapOr<number, string>(err('e'), 9)).toBe(9);
   });
 
   it('unwrapErr returns the error on err', () => {

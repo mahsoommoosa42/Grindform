@@ -11,10 +11,11 @@
  */
 
 import { Hono } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { StatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 
 import { filterExercises } from '@grindform/catalog';
+import type { FilterCriteria } from '@grindform/catalog';
 import {
   GeneratePlanInputSchema,
   isGrindformError,
@@ -123,7 +124,17 @@ export const createApp = (deps: ApiDeps): Hono => {
       readExerciseQuery(c.req.query()),
       'exercise query',
     );
-    return c.json({ exercises: filterExercises(query) });
+    const criteria: FilterCriteria = {
+      ...(query.goal === undefined ? {} : { goal: query.goal }),
+      ...(query.muscle === undefined ? {} : { muscle: query.muscle }),
+      ...(query.primaryMuscle === undefined ? {} : { primaryMuscle: query.primaryMuscle }),
+      ...(query.equipment === undefined ? {} : { equipment: query.equipment }),
+      ...(query.role === undefined ? {} : { role: query.role }),
+      ...(query.pattern === undefined ? {} : { pattern: query.pattern }),
+      ...(query.experience === undefined ? {} : { experience: query.experience }),
+      ...(query.unilateral === undefined ? {} : { unilateral: query.unilateral }),
+    };
+    return c.json({ exercises: filterExercises(criteria) });
   });
 
   app.post('/v1/plans', async (c) => {
@@ -213,9 +224,7 @@ export const createApp = (deps: ApiDeps): Hono => {
   });
 
   app.onError((err, c) => {
-    const status: ContentfulStatusCode = isGrindformError(err)
-      ? (err.httpStatus as ContentfulStatusCode)
-      : 500;
+    const status: StatusCode = isGrindformError(err) ? (err.httpStatus as StatusCode) : 500;
     return c.json({ error: toErrorPayload(err) }, status);
   });
 

@@ -55,12 +55,14 @@ const summariseSessions = (history: readonly SetLog[]): SessionSummary[] => {
       bucket.push(log);
     }
   }
-  const sessions = [...byDay.entries()].map(([day, logs]): SessionSummary => ({
-    day,
-    load: Math.max(...logs.map((l) => l.loadKg)),
-    sets: logs.length,
-    minReps: Math.min(...logs.map((l) => l.reps)),
-  }));
+  const sessions = [...byDay.entries()].map(
+    ([day, logs]): SessionSummary => ({
+      day,
+      load: Math.max(...logs.map((l) => l.loadKg)),
+      sets: logs.length,
+      minReps: Math.min(...logs.map((l) => l.reps)),
+    }),
+  );
   return sessions.sort((a, b) => (a.day < b.day ? 1 : -1));
 };
 

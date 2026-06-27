@@ -37,9 +37,7 @@ describe('applyMigrations', () => {
   });
 
   it('is idempotent — re-applying the same migration is a no-op', async () => {
-    const applied = await applyMigrations(db, [
-      { name: '0000_initial', sqlText: 'SELECT 1' },
-    ]);
+    const applied = await applyMigrations(db, [{ name: '0000_initial', sqlText: 'SELECT 1' }]);
     expect(applied).toEqual([]);
   });
 

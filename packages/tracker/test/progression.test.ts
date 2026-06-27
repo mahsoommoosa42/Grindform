@@ -9,7 +9,12 @@ import { makeLog } from './helpers/fixtures.ts';
 const scheme: RepScheme = { sets: 3, repsLow: 8, repsHigh: 10, restSeconds: 90, perSide: false };
 
 const slotId = newSlotId();
-const session = (day: string, reps: number, loadKg: number, sets = 3): ReturnType<typeof makeLog>[] =>
+const session = (
+  day: string,
+  reps: number,
+  loadKg: number,
+  sets = 3,
+): ReturnType<typeof makeLog>[] =>
   Array.from({ length: sets }, (_, i) =>
     makeLog({
       slotId,

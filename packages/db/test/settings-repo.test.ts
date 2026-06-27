@@ -23,7 +23,10 @@ describe('settings-repo', () => {
 
   it('inserts then updates settings via upsert', async () => {
     const userId = newUserId();
-    const inserted = await upsertSettings(db, userId, { theme: 'grind', preferences: { units: 'kg' } });
+    const inserted = await upsertSettings(db, userId, {
+      theme: 'grind',
+      preferences: { units: 'kg' },
+    });
     expect(inserted.theme).toBe('grind');
 
     const loaded = await getSettings(db, userId);

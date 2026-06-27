@@ -13,15 +13,9 @@
 
 import { exercisesForMuscle } from '@grindform/catalog';
 import type { Exercise } from '@grindform/catalog';
-import {
-  err,
-  newDayId,
-  newPlanId,
-  newSlotId,
-  ok,
-  ValidationError,
-} from '@grindform/core';
+import { err, newDayId, newPlanId, newSlotId, ok, ValidationError } from '@grindform/core';
 import type {
+  DayActivity,
   DaySpec,
   ExerciseRole,
   GeneratePlanInput,
@@ -66,8 +60,7 @@ const pickExercise = (
   rng: Rng,
 ): Exercise | undefined => {
   if (candidates.length === 0) return undefined;
-  const start =
-    ((variation === 'B' ? 1 : 0) + rng.int(candidates.length)) % candidates.length;
+  const start = ((variation === 'B' ? 1 : 0) + rng.int(candidates.length)) % candidates.length;
   const ordered = [...candidates.slice(start), ...candidates.slice(0, start)];
   return ordered.find((c) => !used.has(c.slug));
 };
@@ -261,7 +254,7 @@ const buildTrainingDay = (
 };
 
 /** Build a blocked, preplanned (non-training) day. Always succeeds. */
-const buildBlockedDay = (spec: DaySpec, activity: DaySpec['activity']): PlanDay => ({
+const buildBlockedDay = (spec: DaySpec, activity: DayActivity): PlanDay => ({
   id: newDayId(),
   weekday: spec.weekday,
   activity,
