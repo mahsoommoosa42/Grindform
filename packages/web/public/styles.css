@@ -1,0 +1,92 @@
+/*
+ * Global design tokens + theme palettes for Grindform.
+ *
+ * Themes are expressed purely as CSS custom properties on the document
+ * root, selected by `data-theme` on <html>. Because custom properties
+ * pierce shadow boundaries, the Lit components (which render into shadow
+ * DOM and consume these via `var(--gf-*)`) restyle instantly when the
+ * theme attribute changes — no per-component theme code required.
+ */
+
+:root,
+:root[data-theme='grind'] {
+  --gf-font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --gf-bg: #0d0f12;
+  --gf-surface: #171a20;
+  --gf-surface-2: #1f242c;
+  --gf-text: #f2f4f7;
+  --gf-muted: #9aa4b2;
+  --gf-accent: #f5c518;
+  --gf-accent-text: #0d0f12;
+  --gf-border: #2a2f38;
+  --gf-success: #36d399;
+  --gf-danger: #f87272;
+  --gf-radius: 12px;
+  --gf-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-theme='girlypop'] {
+  --gf-font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --gf-bg: #fff0f6;
+  --gf-surface: #ffffff;
+  --gf-surface-2: #ffe3ef;
+  --gf-text: #3d2230;
+  --gf-muted: #b5728f;
+  --gf-accent: #ff4fa3;
+  --gf-accent-text: #ffffff;
+  --gf-border: #ffc2dd;
+  --gf-success: #1fb6a6;
+  --gf-danger: #e23d6d;
+  --gf-radius: 18px;
+  --gf-shadow: 0 8px 28px rgba(255, 79, 163, 0.25);
+}
+
+:root[data-theme='minimal'] {
+  --gf-font: 'Inter', system-ui, -apple-system, sans-serif;
+  --gf-bg: #fafafa;
+  --gf-surface: #ffffff;
+  --gf-surface-2: #f0f0f0;
+  --gf-text: #18181b;
+  --gf-muted: #71717a;
+  --gf-accent: #18181b;
+  --gf-accent-text: #ffffff;
+  --gf-border: #e4e4e7;
+  --gf-success: #16a34a;
+  --gf-danger: #dc2626;
+  --gf-radius: 8px;
+  --gf-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+:root[data-theme='midnight'] {
+  --gf-font: 'Inter', system-ui, -apple-system, sans-serif;
+  --gf-bg: #0b1020;
+  --gf-surface: #131a2e;
+  --gf-surface-2: #1b2440;
+  --gf-text: #e6ecff;
+  --gf-muted: #8493b8;
+  --gf-accent: #6c8cff;
+  --gf-accent-text: #0b1020;
+  --gf-border: #283353;
+  --gf-success: #4ade80;
+  --gf-danger: #fb7185;
+  --gf-radius: 14px;
+  --gf-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--gf-bg);
+  color: var(--gf-text);
+  font-family: var(--gf-font);
+  -webkit-text-size-adjust: 100%;
+}
