@@ -1,0 +1,303 @@
+/**
+ * @file packages/planner/src/generate.ts
+ *
+ * The weekly-plan generator. Given a validated {@link GeneratePlanInput}
+ * it produces a 7-(or fewer-)day {@link WeeklyPlan}: blocked preplanned
+ * days are passed through untouched, while training days are filled with
+ * a main lift or two plus accessories sized to the per-session time
+ * budget, honouring the chosen goal, equipment, and experience level.
+ *
+ * Generation is deterministic given `input.seed`, so the same input
+ * always yields the same plan and a "boredom swap" is just a new seed.
+ */
+
+import { exercisesForMuscle } from '@grindform/catalog';
+import type { Exercise } from '@grindform/catalog';
+import {
+  err,
+  newDayId,
+  newPlanId,
+  newSlotId,
+  ok,
+  ValidationError,
+} from '@grindform/core';
+import type {
+  DaySpec,
+  ExerciseRole,
+  GeneratePlanInput,
+  MuscleGroup,
+  Result,
+} from '@grindform/core';
+
+import { estimateSlotMinutes, GOAL_PROFILES, schemeForRole } from './profiles.ts';
+import type { GoalProfile } from './profiles.ts';
+import { makeRng } from './rng.ts';
+import type { Rng } from './rng.ts';
+import type { ExerciseSlot, PlanDay, SessionBlock, WeeklyPlan } from './types.ts';
+
+/** Fraction of working time loosely reserved for the main lift(s). */
+const MAIN_TIME_SHARE = 0.45;
+
+/** Hard cap on accessory slots regardless of available time. */
+const MAX_ACCESSORIES = 6;
+
+const WARMUP_NOTE =
+  'Raise the heart rate, then dynamic mobility for the muscles you are about to train.';
+const PHYSIO_NOTE =
+  'Your prescribed physio / prehab routine — protect the joint first, train second.';
+const COOLDOWN_NOTE = 'Easy walk to bring the heart rate down, then static stretching.';
+
+/** Build one exercise slot, carrying the cue across when present. */
+const makeSlot = (profile: GoalProfile, e: Exercise, role: ExerciseRole): ExerciseSlot => {
+  const scheme = schemeForRole(profile, role, e.unilateral);
+  const base = { id: newSlotId(), exerciseSlug: e.slug, name: e.name, scheme };
+  return e.cue === undefined ? base : { ...base, cue: e.cue };
+};
+
+/**
+ * Pick the first not-yet-used candidate, starting from an offset that
+ * depends on the A/B variation and the seeded RNG. Returns `undefined`
+ * only when every candidate is already used (or the list is empty).
+ */
+const pickExercise = (
+  candidates: readonly Exercise[],
+  used: ReadonlySet<string>,
+  variation: 'A' | 'B',
+  rng: Rng,
+): Exercise | undefined => {
+  if (candidates.length === 0) return undefined;
+  const start =
+    ((variation === 'B' ? 1 : 0) + rng.int(candidates.length)) % candidates.length;
+  const ordered = [...candidates.slice(start), ...candidates.slice(0, start)];
+  return ordered.find((c) => !used.has(c.slug));
+};
+
+/** Assemble the ordered prelude blocks (physio first, then warm-up). */
+const preludeBlocks = (input: GeneratePlanInput): SessionBlock[] => {
+  const blocks: SessionBlock[] = [];
+  const { physioMinutes, warmupMinutes } = input.timeBudget;
+  if (physioMinutes > 0) {
+    blocks.push({
+      type: 'physio',
+      title: 'Physio (first 15)',
+      estMinutes: physioMinutes,
+      slots: [],
+      note: PHYSIO_NOTE,
+    });
+  }
+  if (warmupMinutes > 0) {
+    blocks.push({
+      type: 'warmup',
+      title: 'Warm-up',
+      estMinutes: warmupMinutes,
+      slots: [],
+      note: WARMUP_NOTE,
+    });
+  }
+  return blocks;
+};
+
+/** Sum estimated minutes across a slot list. */
+const sumSlotMinutes = (slots: readonly ExerciseSlot[]): number =>
+  slots.reduce((acc, s) => acc + estimateSlotMinutes(s.scheme), 0);
+
+/** Select the main lift(s) for the day's focus muscles. */
+const selectMains = (
+  focus: readonly MuscleGroup[],
+  profile: GoalProfile,
+  input: GeneratePlanInput,
+  workingMinutes: number,
+  used: Set<string>,
+  rng: Rng,
+): ExerciseSlot[] => {
+  const mains: ExerciseSlot[] = [];
+  let minutes = 0;
+  for (const muscle of focus) {
+    if (mains.length >= 1 && minutes >= workingMinutes * MAIN_TIME_SHARE) break;
+    const candidates = exercisesForMuscle(muscle, {
+      role: 'main',
+      equipment: input.equipment,
+      experience: input.experience,
+    });
+    const pick = pickExercise(candidates, used, input.variation, rng);
+    if (pick !== undefined) {
+      const slot = makeSlot(profile, pick, 'main');
+      mains.push(slot);
+      used.add(pick.slug);
+      minutes += estimateSlotMinutes(slot.scheme);
+    }
+  }
+  return mains;
+};
+
+/** Fill accessory slots round-robin across the focus muscles. */
+const selectAccessories = (
+  focus: readonly MuscleGroup[],
+  profile: GoalProfile,
+  input: GeneratePlanInput,
+  workingMinutes: number,
+  usedMinutes: number,
+  used: Set<string>,
+  rng: Rng,
+): ExerciseSlot[] => {
+  const slots: ExerciseSlot[] = [];
+  let minutes = usedMinutes;
+  let cursor = 0;
+  let misses = 0;
+  const cap = Math.min(profile.accessoryTarget, MAX_ACCESSORIES);
+  while (slots.length < cap && minutes < workingMinutes && misses < focus.length) {
+    const muscle = focus[cursor % focus.length] as MuscleGroup;
+    cursor += 1;
+    const candidates = exercisesForMuscle(muscle, {
+      equipment: input.equipment,
+      experience: input.experience,
+    }).filter((c) => c.role !== 'main');
+    const pick = pickExercise(candidates, used, input.variation, rng);
+    if (pick === undefined) {
+      misses += 1;
+      continue;
+    }
+    misses = 0;
+    const slot = makeSlot(profile, pick, pick.role);
+    slots.push(slot);
+    used.add(pick.slug);
+    minutes += estimateSlotMinutes(slot.scheme);
+  }
+  return slots;
+};
+
+/** Optionally append a conditioning finisher for fat-loss / endurance goals. */
+const selectConditioning = (
+  profile: GoalProfile,
+  input: GeneratePlanInput,
+  used: Set<string>,
+  rng: Rng,
+): ExerciseSlot | undefined => {
+  if (!profile.includeConditioning) return undefined;
+  const candidates = exercisesForMuscle('full_body', {
+    role: 'conditioning',
+    equipment: input.equipment,
+    experience: input.experience,
+  });
+  const pick = pickExercise(candidates, used, input.variation, rng);
+  if (pick === undefined) return undefined;
+  used.add(pick.slug);
+  return makeSlot(profile, pick, 'conditioning');
+};
+
+/** Build a single training day, or fail if constraints leave it empty. */
+const buildTrainingDay = (
+  spec: DaySpec,
+  profile: GoalProfile,
+  input: GeneratePlanInput,
+  rng: Rng,
+): Result<PlanDay, ValidationError> => {
+  const { sessionMinutes, warmupMinutes, cooldownMinutes, physioMinutes } = input.timeBudget;
+  const workingMinutes = Math.max(
+    0,
+    sessionMinutes - warmupMinutes - cooldownMinutes - physioMinutes,
+  );
+  const used = new Set<string>();
+
+  const mains = selectMains(spec.focus, profile, input, workingMinutes, used, rng);
+  const accessories = selectAccessories(
+    spec.focus,
+    profile,
+    input,
+    workingMinutes,
+    sumSlotMinutes(mains),
+    used,
+    rng,
+  );
+  const finisher = selectConditioning(profile, input, used, rng);
+  const accessoryAndFinisher = finisher === undefined ? accessories : [...accessories, finisher];
+
+  if (mains.length === 0 && accessoryAndFinisher.length === 0) {
+    return err(
+      new ValidationError('no exercises match the chosen equipment / experience for this day', {
+        weekday: spec.weekday,
+        focus: spec.focus,
+      }),
+    );
+  }
+
+  const blocks: SessionBlock[] = preludeBlocks(input);
+  if (mains.length > 0) {
+    blocks.push({
+      type: 'main',
+      title: 'Main lift',
+      estMinutes: sumSlotMinutes(mains),
+      slots: mains,
+    });
+  }
+  if (accessoryAndFinisher.length > 0) {
+    blocks.push({
+      type: 'accessory',
+      title: 'Accessories',
+      estMinutes: sumSlotMinutes(accessoryAndFinisher),
+      slots: accessoryAndFinisher,
+    });
+  }
+  if (cooldownMinutes > 0) {
+    blocks.push({
+      type: 'cooldown',
+      title: 'Cool-down',
+      estMinutes: cooldownMinutes,
+      slots: [],
+      note: COOLDOWN_NOTE,
+    });
+  }
+
+  const estMinutes = blocks.reduce((acc, b) => acc + b.estMinutes, 0);
+  const day: PlanDay = {
+    id: newDayId(),
+    weekday: spec.weekday,
+    focus: spec.focus,
+    blocks,
+    estMinutes,
+    ...(spec.label === undefined ? {} : { label: spec.label }),
+  };
+  return ok(day);
+};
+
+/** Build a blocked, preplanned (non-training) day. Always succeeds. */
+const buildBlockedDay = (spec: DaySpec, activity: DaySpec['activity']): PlanDay => ({
+  id: newDayId(),
+  weekday: spec.weekday,
+  activity,
+  focus: [],
+  blocks: [],
+  estMinutes: 0,
+  ...(spec.label === undefined ? {} : { label: spec.label }),
+});
+
+/**
+ * Generate a full weekly plan from validated input.
+ *
+ * Returns `Err(ValidationError)` if any training day cannot be filled
+ * given the equipment / experience constraints; otherwise `Ok(plan)`.
+ */
+export const generatePlan = (input: GeneratePlanInput): Result<WeeklyPlan, ValidationError> => {
+  const profile = GOAL_PROFILES[input.goal];
+  const rng = makeRng(input.seed ?? 0);
+  const days: PlanDay[] = [];
+
+  for (const spec of input.days) {
+    if (spec.activity !== undefined) {
+      days.push(buildBlockedDay(spec, spec.activity));
+      continue;
+    }
+    const built = buildTrainingDay(spec, profile, input, rng);
+    if (!built.ok) return built;
+    days.push(built.value);
+  }
+
+  return ok({
+    id: newPlanId(),
+    goal: input.goal,
+    experience: input.experience,
+    variation: input.variation,
+    timeBudget: input.timeBudget,
+    days,
+  });
+};

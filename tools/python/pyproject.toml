@@ -1,0 +1,25 @@
+[project]
+name = "grindform-tools"
+version = "0.1.0"
+description = "uv-managed Python toolchain (ruff + pre-commit) for the Grindform monorepo."
+requires-python = ">=3.12"
+dependencies = [
+    "ruff==0.15.12",
+    "pre-commit==4.0.1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# The repo is JS/TS; this toolchain exists only to run ruff + pre-commit.
+# Scan the repo root but skip the JS/TS surface and vendored dirs.
+extend-exclude = [
+    "node_modules",
+    "dist",
+    "build",
+    "coverage",
+    "packages/web/static",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
