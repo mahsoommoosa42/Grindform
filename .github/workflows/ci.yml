@@ -62,9 +62,9 @@ jobs:
       - name: Sync toolchain
         run: cd tools/python && uv sync
       - name: ruff lint
-        run: bun run py:lint
+        run: cd tools/python && uv run ruff check ../..
       - name: ruff format check
-        run: bun run py:format:check
+        run: cd tools/python && uv run ruff format --check ../..
 
   e2e:
     name: Playwright E2E (Chromium + WebKit)
