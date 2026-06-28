@@ -12,13 +12,17 @@ import type { Client } from './helpers/db.ts';
 const seedPlanWithLog = async (client: Client): Promise<void> => {
   const planRes = await client.json('/v1/plans', 'POST', {
     goal: 'build_muscle',
-    days: [{ weekday: 'mon', focus: ['glutes'] }],
+    days: [{ weekday: 'mon', sessions: [{ kind: 'training', focus: ['glutes'] }] }],
   });
   const { plan } = (await planRes.json()) as {
-    plan: { id: string; days: { id: string; blocks: { slots: { id: string }[] }[] }[] };
+    plan: {
+      id: string;
+      days: { id: string; sessions: { blocks?: { slots: { id: string }[] }[] }[] }[];
+    };
   };
   const dayId = plan.days[0]!.id;
-  const slotId = plan.days[0]!.blocks.flatMap((b) => b.slots)[0]!.id;
+  const slotId = plan.days[0]!.sessions.flatMap((s) => s.blocks ?? []).flatMap((b) => b.slots)[0]!
+    .id;
   await client.json(`/v1/plans/${plan.id}/days/${dayId}/slots/${slotId}/complete`, 'POST', {
     loadKg: 60,
     reps: 8,

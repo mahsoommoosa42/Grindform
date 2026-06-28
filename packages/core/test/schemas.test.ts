@@ -69,28 +69,69 @@ describe('TimeBudgetSchema', () => {
       warmupMinutes: 8,
       cooldownMinutes: 5,
       physioMinutes: 0,
+      physioPosition: 0,
     });
   });
 
-  it('accepts an explicit physio block', () => {
-    expect(TimeBudgetSchema.parse({ physioMinutes: 15 }).physioMinutes).toBe(15);
+  it('accepts an explicit physio block and placement', () => {
+    const b = TimeBudgetSchema.parse({ physioMinutes: 15, physioPosition: 3 });
+    expect(b.physioMinutes).toBe(15);
+    expect(b.physioPosition).toBe(3);
+  });
+
+  it('rejects an out-of-range physio placement', () => {
+    expect(TimeBudgetSchema.safeParse({ physioPosition: 5 }).success).toBe(false);
   });
 });
 
 describe('DaySpecSchema', () => {
-  it('accepts a blocked-activity day', () => {
-    const d = DaySpecSchema.parse({ weekday: 'sat', activity: 'pilates' });
-    expect(d.activity).toBe('pilates');
-    expect(d.focus).toEqual([]);
+  it('accepts a training session day', () => {
+    const d = DaySpecSchema.parse({
+      weekday: 'mon',
+      sessions: [{ kind: 'training', focus: ['glutes', 'shoulders'] }],
+    });
+    expect(d.sessions).toHaveLength(1);
+    const s = d.sessions[0];
+    expect(s?.kind).toBe('training');
+    if (s?.kind === 'training') expect(s.focus).toEqual(['glutes', 'shoulders']);
   });
 
-  it('accepts a training day with a focus', () => {
-    const d = DaySpecSchema.parse({ weekday: 'mon', focus: ['glutes', 'shoulders'] });
-    expect(d.focus).toEqual(['glutes', 'shoulders']);
+  it('accepts an external session day with a default duration', () => {
+    const d = DaySpecSchema.parse({
+      weekday: 'sat',
+      sessions: [{ kind: 'external', activity: 'run' }],
+    });
+    const s = d.sessions[0];
+    expect(s?.kind).toBe('external');
+    if (s?.kind === 'external') expect(s.plannedMinutes).toBe(30);
   });
 
-  it('rejects a day that is neither blocked nor focused', () => {
-    expect(DaySpecSchema.safeParse({ weekday: 'mon' }).success).toBe(false);
+  it('accepts a multi-session day (training + external)', () => {
+    const d = DaySpecSchema.parse({
+      weekday: 'tue',
+      sessions: [
+        { kind: 'training', focus: ['back'] },
+        { kind: 'external', activity: 'run', plannedMinutes: 40 },
+      ],
+    });
+    expect(d.sessions).toHaveLength(2);
+  });
+
+  it('treats a day with no sessions as a valid rest day', () => {
+    const d = DaySpecSchema.parse({ weekday: 'sun' });
+    expect(d.sessions).toEqual([]);
+  });
+
+  it('rejects a training session with no focus', () => {
+    expect(
+      DaySpecSchema.safeParse({ weekday: 'mon', sessions: [{ kind: 'training', focus: [] }] })
+        .success,
+    ).toBe(false);
+  });
+
+  it('rejects more than four sessions in a day', () => {
+    const sessions = Array.from({ length: 5 }, () => ({ kind: 'external', activity: 'run' }));
+    expect(DaySpecSchema.safeParse({ weekday: 'mon', sessions }).success).toBe(false);
   });
 });
 
@@ -98,7 +139,7 @@ describe('GeneratePlanInputSchema', () => {
   it('fills equipment + timeBudget + variation defaults', () => {
     const input = GeneratePlanInputSchema.parse({
       goal: 'recomp',
-      days: [{ weekday: 'mon', focus: ['glutes'] }],
+      days: [{ weekday: 'mon', sessions: [{ kind: 'training', focus: ['glutes'] }] }],
     });
     expect(input.experience).toBe('intermediate');
     expect(input.variation).toBe('A');
@@ -111,7 +152,10 @@ describe('GeneratePlanInputSchema', () => {
   });
 
   it('rejects more than seven days', () => {
-    const days = WEEKDAYS.map((weekday) => ({ weekday, focus: ['core' as const] }));
+    const days = WEEKDAYS.map((weekday) => ({
+      weekday,
+      sessions: [{ kind: 'training' as const, focus: ['core' as const] }],
+    }));
     expect(
       GeneratePlanInputSchema.safeParse({ goal: 'recomp', days: [...days, days[0]] }).success,
     ).toBe(false);

@@ -8,13 +8,26 @@ import type { Client } from './helpers/db.ts';
 interface PlanResponse {
   plan: {
     id: string;
-    days: { id: string; blocks: { slots: { id: string }[] }[] }[];
+    days: {
+      id: string;
+      sessions: { kind: string; blocks?: { slots: { id: string }[] }[] }[];
+    }[];
   };
 }
 
 const samplePlanInput = {
   goal: 'build_muscle',
-  days: [{ weekday: 'mon', focus: ['glutes', 'back'] }],
+  days: [
+    {
+      weekday: 'mon',
+      // A training session plus an external run, so slot lookups must skip
+      // external sessions when searching for an exercise slot.
+      sessions: [
+        { kind: 'training', focus: ['glutes', 'back'] },
+        { kind: 'external', activity: 'run', plannedMinutes: 20 },
+      ],
+    },
+  ],
 };
 
 const createSamplePlan = async (client: Client): Promise<PlanResponse['plan']> => {
@@ -25,9 +38,11 @@ const createSamplePlan = async (client: Client): Promise<PlanResponse['plan']> =
 
 const firstSlotId = (plan: PlanResponse['plan']): string => {
   for (const day of plan.days) {
-    for (const block of day.blocks) {
-      const slot = block.slots[0];
-      if (slot !== undefined) return slot.id;
+    for (const session of day.sessions) {
+      for (const block of session.blocks ?? []) {
+        const slot = block.slots[0];
+        if (slot !== undefined) return slot.id;
+      }
     }
   }
   throw new Error('no slot in plan');
@@ -116,7 +131,7 @@ describe('Grindform API', () => {
       const res = await client.json('/v1/plans', 'POST', {
         goal: 'build_muscle',
         equipment: ['band'],
-        days: [{ weekday: 'mon', focus: ['quads'] }],
+        days: [{ weekday: 'mon', sessions: [{ kind: 'training', focus: ['quads'] }] }],
       });
       expect(res.status).toBe(400);
       const body = (await res.json()) as { error: { code: string } };

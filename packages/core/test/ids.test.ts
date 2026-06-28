@@ -6,6 +6,7 @@ import {
   isExerciseSlug,
   isLogId,
   isPlanId,
+  isPlanSessionId,
   isSessionId,
   isSlotId,
   isUserId,
@@ -13,6 +14,7 @@ import {
   newDayId,
   newLogId,
   newPlanId,
+  newPlanSessionId,
   newSessionId,
   newSlotId,
   newUserId,
@@ -33,6 +35,7 @@ describe('id factories produce prefixed, well-formed, sortable IDs', () => {
     { make: newAuditId, prefix: 'aud', guard: isAuditId },
     { make: newPlanId, prefix: 'pln', guard: isPlanId },
     { make: newDayId, prefix: 'day', guard: isDayId },
+    { make: newPlanSessionId, prefix: 'pss', guard: isPlanSessionId },
     { make: newSlotId, prefix: 'slt', guard: isSlotId },
     { make: newLogId, prefix: 'log', guard: isLogId },
   ] as const;

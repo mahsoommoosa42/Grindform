@@ -89,9 +89,11 @@ const PlanIdParamSchema = z
 const findDay = (plan: WeeklyPlan, dayId: string): PlanDay | undefined =>
   plan.days.find((d) => d.id === dayId);
 
-/** Find a slot within a day by id. */
+/** Find a slot within a day by id, across all its training sessions. */
 const findSlot = (day: PlanDay, slotId: string): ExerciseSlot | undefined =>
-  day.blocks.flatMap((b) => b.slots).find((s) => s.id === slotId);
+  day.sessions
+    .flatMap((s) => (s.kind === 'training' ? s.blocks.flatMap((b) => b.slots) : []))
+    .find((s) => s.id === slotId);
 
 /** Normalise the `GET /v1/exercises` query string into parseable shape. */
 const readExerciseQuery = (queries: Record<string, string>): unknown => {

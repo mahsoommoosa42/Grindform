@@ -17,10 +17,8 @@ CREATE TABLE plan_days (
   plan_id text NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
   position integer NOT NULL,
   weekday text NOT NULL,
-  activity text,
   label text,
-  focus jsonb NOT NULL,
-  blocks jsonb NOT NULL,
+  sessions jsonb NOT NULL,
   est_minutes integer NOT NULL
 );
 

@@ -11,7 +11,16 @@ export type Goal = 'build_muscle' | 'lose_fat' | 'build_endurance' | 'recomp';
 export type Experience = 'beginner' | 'intermediate' | 'advanced';
 export type ThemeId = 'pulse' | 'grind' | 'girlypop' | 'minimal';
 export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
-export type DayActivity = 'rest' | 'pilates' | 'physio' | 'steps' | 'custom';
+export type ExternalActivity =
+  | 'run'
+  | 'walk'
+  | 'cycle'
+  | 'swim'
+  | 'pilates'
+  | 'physio'
+  | 'mobility'
+  | 'sport'
+  | 'custom';
 export type Equipment =
   | 'barbell'
   | 'dumbbell'
@@ -47,6 +56,8 @@ export interface TimeBudget {
   readonly warmupMinutes: number;
   readonly cooldownMinutes: number;
   readonly physioMinutes: number;
+  /** Anchor (0–4) for where the physio block sits in the session. */
+  readonly physioPosition: number;
 }
 
 /** Superset membership; slots sharing a `group` are done back-to-back. */
@@ -74,13 +85,31 @@ export interface SessionBlock {
   readonly note?: string;
 }
 
-export interface PlanDay {
+export interface TrainingSession {
   readonly id: string;
-  readonly weekday: Weekday;
-  readonly activity?: DayActivity;
+  readonly kind: 'training';
   readonly label?: string;
   readonly focus: readonly MuscleGroup[];
   readonly blocks: readonly SessionBlock[];
+  readonly estMinutes: number;
+}
+
+export interface ExternalSession {
+  readonly id: string;
+  readonly kind: 'external';
+  readonly activity: ExternalActivity;
+  readonly label?: string;
+  readonly plannedMinutes: number;
+  readonly estMinutes: number;
+}
+
+export type PlanSession = TrainingSession | ExternalSession;
+
+export interface PlanDay {
+  readonly id: string;
+  readonly weekday: Weekday;
+  readonly label?: string;
+  readonly sessions: readonly PlanSession[];
   readonly estMinutes: number;
 }
 
@@ -154,11 +183,28 @@ export interface AuditRow {
   readonly createdAt: string;
 }
 
+/** A training session in a generate request. */
+export interface TrainingSessionSpecInput {
+  readonly kind: 'training';
+  readonly focus: MuscleGroup[];
+  readonly label?: string;
+  readonly timeBudget?: TimeBudget;
+}
+
+/** An external (self-tracked) session in a generate request. */
+export interface ExternalSessionSpecInput {
+  readonly kind: 'external';
+  readonly activity: ExternalActivity;
+  readonly label?: string;
+  readonly plannedMinutes: number;
+}
+
+export type SessionSpecInput = TrainingSessionSpecInput | ExternalSessionSpecInput;
+
 /** One day's spec in a generate request. */
 export interface DaySpecInput {
   readonly weekday: Weekday;
-  readonly activity?: DayActivity;
-  readonly focus?: MuscleGroup[];
+  readonly sessions: SessionSpecInput[];
   readonly label?: string;
 }
 

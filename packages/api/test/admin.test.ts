@@ -39,7 +39,7 @@ describe('admin console', () => {
     it('lists every account with a plan count', async () => {
       await member.json('/v1/plans', 'POST', {
         goal: 'build_muscle',
-        days: [{ weekday: 'mon', focus: ['glutes'] }],
+        days: [{ weekday: 'mon', sessions: [{ kind: 'training', focus: ['glutes'] }] }],
       });
       const res = await admin.request('/v1/admin/users');
       expect(res.status).toBe(200);

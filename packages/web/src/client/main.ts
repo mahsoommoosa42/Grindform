@@ -30,21 +30,39 @@ import { ApiError } from './api.ts';
 import type {
   AdminUserRow,
   AuditRow,
-  DayActivity,
   DayProgress,
   DaySpecInput,
   Equipment,
   ExerciseSlot,
   Experience,
+  ExternalActivity,
+  ExternalSession,
   Goal,
   MuscleGroup,
   PlanDay,
   PublicUser,
+  SessionBlock,
+  SessionSpecInput,
+  TimeBudget,
+  TrainingSession,
   ThemeId,
   VolumeSummary,
   WeeklyPlan,
   Weekday,
 } from './types.ts';
+
+/** Display labels for external activities. */
+const ACTIVITY_LABELS: Record<ExternalActivity, string> = {
+  run: 'Run',
+  walk: 'Walk',
+  cycle: 'Cycle',
+  swim: 'Swim',
+  pilates: 'Pilates',
+  physio: 'Physio',
+  mobility: 'Mobility',
+  sport: 'Sport',
+  custom: 'Other',
+};
 
 const THEMES: readonly { id: ThemeId; label: string }[] = [
   { id: 'pulse', label: 'Pulse' },
@@ -117,24 +135,76 @@ const WEEKDAYS: readonly { id: Weekday; label: string }[] = [
   { id: 'sun', label: 'Sunday' },
 ];
 
-const ACTIVITIES: readonly DayActivity[] = ['rest', 'pilates', 'physio', 'steps', 'custom'];
+const ACTIVITIES: readonly ExternalActivity[] = [
+  'run',
+  'walk',
+  'cycle',
+  'swim',
+  'pilates',
+  'physio',
+  'mobility',
+  'sport',
+  'custom',
+];
 
-/** A day's editable configuration in the generator form. */
-interface DayConfig {
-  weekday: Weekday;
-  /** Either a generated training day, or a blocked preplanned activity. */
-  mode: 'train' | DayActivity;
+/** Where the physio block can sit in a training session (mirrors core's PHYSIO_POSITIONS). */
+const PHYSIO_POSITIONS: readonly string[] = [
+  'Before warm-up',
+  'After warm-up',
+  'After main lift',
+  'After accessories',
+  'At the end',
+];
+
+/** A training session being configured in the generator form. */
+interface TrainingSessionConfig {
+  kind: 'training';
   focus: MuscleGroup[];
+  /** Per-session overrides; `null` means "use the plan-wide default". */
+  sessionMinutes: number | null;
+  physioMinutes: number | null;
+  physioPosition: number;
 }
 
+/** An external (self-tracked) session being configured in the generator form. */
+interface ExternalSessionConfig {
+  kind: 'external';
+  activity: ExternalActivity;
+  plannedMinutes: number;
+}
+
+type SessionConfig = TrainingSessionConfig | ExternalSessionConfig;
+
+/** A day's editable configuration: an ordered list of sessions (empty = rest). */
+interface DayConfig {
+  weekday: Weekday;
+  sessions: SessionConfig[];
+}
+
+/** A fresh training-session config with no per-session time overrides. */
+const newTrainingConfig = (focus: MuscleGroup[]): TrainingSessionConfig => ({
+  kind: 'training',
+  focus,
+  sessionMinutes: null,
+  physioMinutes: null,
+  physioPosition: 0,
+});
+
+/** A fresh external-session config with a sensible default duration. */
+const newExternalConfig = (activity: ExternalActivity = 'run'): ExternalSessionConfig => ({
+  kind: 'external',
+  activity,
+  plannedMinutes: 30,
+});
+
 const DEFAULT_DAYS: readonly DayConfig[] = [
-  { weekday: 'mon', mode: 'train', focus: ['glutes', 'hamstrings'] },
-  { weekday: 'tue', mode: 'train', focus: ['back', 'biceps'] },
-  { weekday: 'wed', mode: 'pilates', focus: [] },
-  { weekday: 'thu', mode: 'train', focus: ['quads', 'shoulders'] },
-  { weekday: 'fri', mode: 'train', focus: ['chest', 'triceps'] },
-  { weekday: 'sat', mode: 'train', focus: ['glutes', 'core'] },
-  { weekday: 'sun', mode: 'rest', focus: [] },
+  { weekday: 'mon', sessions: [newTrainingConfig(['glutes', 'hamstrings'])] },
+  { weekday: 'tue', sessions: [newTrainingConfig(['back', 'biceps'])] },
+  { weekday: 'wed', sessions: [newExternalConfig('pilates')] },
+  { weekday: 'thu', sessions: [newTrainingConfig(['quads', 'shoulders'])] },
+  { weekday: 'fri', sessions: [newTrainingConfig(['chest', 'triceps'])] },
+  { weekday: 'sat', sessions: [newTrainingConfig(['glutes', 'core'])] },
+  { weekday: 'sun', sessions: [] },
 ];
 
 const titleCase = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ');
@@ -189,6 +259,41 @@ const writeRecent = (slug: string, weight: number, reps: number): void => {
     globalThis.localStorage?.setItem(recentKey(slug), JSON.stringify({ weight, reps }));
   } catch {
     /* storage unavailable (private mode / quota) — non-fatal */
+  }
+};
+
+/** Locally-tracked completion state for an external session, keyed by its id. */
+interface ExternalLog {
+  done: boolean;
+  actualMinutes: number | null;
+}
+
+/** localStorage key for an external session's tracked completion. */
+const externalKey = (sessionId: string): string => `gf.ext.${sessionId}`;
+
+/** Read an external session's tracked state (done + actual minutes), if any. */
+const readExternal = (sessionId: string): ExternalLog => {
+  try {
+    const raw = globalThis.localStorage?.getItem(externalKey(sessionId));
+    if (raw === null || raw === undefined) return { done: false, actualMinutes: null };
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return { done: false, actualMinutes: null };
+    const { done, actualMinutes } = parsed as Record<string, unknown>;
+    return {
+      done: done === true,
+      actualMinutes: typeof actualMinutes === 'number' ? actualMinutes : null,
+    };
+  } catch {
+    return { done: false, actualMinutes: null };
+  }
+};
+
+/** Persist an external session's tracked state so it survives reloads. */
+const writeExternal = (sessionId: string, log: ExternalLog): void => {
+  try {
+    globalThis.localStorage?.setItem(externalKey(sessionId), JSON.stringify(log));
+  } catch {
+    /* storage unavailable — non-fatal */
   }
 };
 
@@ -265,6 +370,7 @@ export class GfApp extends LitElement {
     dayVolume: { state: true },
     weekVolume: { state: true },
     slotState: { state: true },
+    externalState: { state: true },
     busy: { state: true },
     error: { state: true },
     calcExercise: { state: true },
@@ -306,6 +412,8 @@ export class GfApp extends LitElement {
   declare weekVolume: VolumeSummary | null;
   /** Per-slot tracker state (recent set, options, set rows), keyed by slot id. */
   declare slotState: Record<string, SlotUiState>;
+  /** Locally-tracked external-session state, keyed by plan-session id. */
+  declare externalState: Record<string, ExternalLog>;
   declare busy: boolean;
   declare error: string | null;
   /** Load-calculator inputs (client-side only; never persisted). */
@@ -339,13 +447,19 @@ export class GfApp extends LitElement {
     this.cooldownMinutes = 5;
     this.physioMinutes = 0;
     this.variation = 'A';
-    this.days = DEFAULT_DAYS.map((d) => ({ ...d, focus: [...d.focus] }));
+    this.days = DEFAULT_DAYS.map((d) => ({
+      weekday: d.weekday,
+      sessions: d.sessions.map((s) =>
+        s.kind === 'training' ? { ...s, focus: [...s.focus] } : { ...s },
+      ),
+    }));
     this.plan = null;
     this.selectedDayId = null;
     this.progress = {};
     this.dayVolume = {};
     this.weekVolume = null;
     this.slotState = {};
+    this.externalState = {};
     this.busy = false;
     this.error = null;
     this.calcExercise = '';
@@ -550,28 +664,73 @@ export class GfApp extends LitElement {
       : [...this.equipment, item];
   }
 
-  private setDayMode(weekday: Weekday, mode: 'train' | DayActivity): void {
-    this.days = this.days.map((d) => (d.weekday === weekday ? { ...d, mode } : d));
+  /** Append a session of the given kind to a day. */
+  private addSession(weekday: Weekday, kind: 'training' | 'external'): void {
+    const fresh: SessionConfig = kind === 'training' ? newTrainingConfig([]) : newExternalConfig();
+    this.days = this.days.map((d) =>
+      d.weekday === weekday ? { ...d, sessions: [...d.sessions, fresh] } : d,
+    );
   }
 
-  private toggleFocus(weekday: Weekday, muscle: MuscleGroup): void {
-    this.days = this.days.map((d) => {
-      if (d.weekday !== weekday) return d;
-      const focus = d.focus.includes(muscle)
-        ? d.focus.filter((m) => m !== muscle)
-        : [...d.focus, muscle];
-      return { ...d, focus };
+  /** Remove the session at `index` from a day. */
+  private removeSession(weekday: Weekday, index: number): void {
+    this.days = this.days.map((d) =>
+      d.weekday === weekday ? { ...d, sessions: d.sessions.filter((_, i) => i !== index) } : d,
+    );
+  }
+
+  /** Replace the session at `index` in a day via an updater. */
+  private updateSession(
+    weekday: Weekday,
+    index: number,
+    update: (s: SessionConfig) => SessionConfig,
+  ): void {
+    this.days = this.days.map((d) =>
+      d.weekday === weekday
+        ? { ...d, sessions: d.sessions.map((s, i) => (i === index ? update(s) : s)) }
+        : d,
+    );
+  }
+
+  private toggleSessionFocus(weekday: Weekday, index: number, muscle: MuscleGroup): void {
+    this.updateSession(weekday, index, (s) => {
+      if (s.kind !== 'training') return s;
+      const focus = s.focus.includes(muscle)
+        ? s.focus.filter((m) => m !== muscle)
+        : [...s.focus, muscle];
+      return { ...s, focus };
     });
   }
 
   private buildRequest(): DaySpecInput[] {
-    return this.days.map((d): DaySpecInput => {
-      if (d.mode === 'train') {
-        const focus = d.focus.length > 0 ? d.focus : (['full_body'] as MuscleGroup[]);
-        return { weekday: d.weekday, focus };
-      }
-      return { weekday: d.weekday, activity: d.mode, label: titleCase(d.mode) };
-    });
+    return this.days.map(
+      (d): DaySpecInput => ({
+        weekday: d.weekday,
+        sessions: d.sessions.map((s): SessionSpecInput => {
+          if (s.kind === 'external') {
+            return {
+              kind: 'external',
+              activity: s.activity,
+              label: ACTIVITY_LABELS[s.activity],
+              plannedMinutes: s.plannedMinutes,
+            };
+          }
+          const focus = s.focus.length > 0 ? s.focus : (['full_body'] as MuscleGroup[]);
+          const overridden =
+            s.sessionMinutes !== null || s.physioMinutes !== null || s.physioPosition !== 0;
+          const timeBudget: TimeBudget | undefined = overridden
+            ? {
+                sessionMinutes: s.sessionMinutes ?? this.sessionMinutes,
+                warmupMinutes: this.warmupMinutes,
+                cooldownMinutes: this.cooldownMinutes,
+                physioMinutes: s.physioMinutes ?? this.physioMinutes,
+                physioPosition: s.physioPosition,
+              }
+            : undefined;
+          return { kind: 'training', focus, ...(timeBudget === undefined ? {} : { timeBudget }) };
+        }),
+      }),
+    );
   }
 
   private async onGenerate(): Promise<void> {
@@ -591,6 +750,7 @@ export class GfApp extends LitElement {
           warmupMinutes: this.warmupMinutes,
           cooldownMinutes: this.cooldownMinutes,
           physioMinutes: this.physioMinutes,
+          physioPosition: 0,
         },
         days: this.buildRequest(),
         variation: this.variation,
@@ -613,7 +773,8 @@ export class GfApp extends LitElement {
   /** Seed per-slot tracker state for a day (recent set, options, set rows). */
   private initSlotState(day: PlanDay): void {
     const next: Record<string, SlotUiState> = { ...this.slotState };
-    for (const block of day.blocks) {
+    const blocks = day.sessions.flatMap((s) => (s.kind === 'training' ? s.blocks : []));
+    for (const block of blocks) {
       for (const slot of block.slots) {
         if (next[slot.id] !== undefined) continue;
         const recent = readRecent(slot.exerciseSlug);
@@ -641,8 +802,45 @@ export class GfApp extends LitElement {
   private openTracker(dayId: string): void {
     this.selectedDayId = dayId;
     const day = this.plan?.days.find((d) => d.id === dayId);
-    if (day !== undefined) this.initSlotState(day);
+    if (day !== undefined) {
+      this.initSlotState(day);
+      this.initExternalState(day);
+    }
     void this.refreshProgress(dayId);
+  }
+
+  /** Hydrate the reactive external-session state for a day from localStorage. */
+  private initExternalState(day: PlanDay): void {
+    const next: Record<string, ExternalLog> = { ...this.externalState };
+    for (const s of day.sessions) {
+      if (s.kind === 'external' && next[s.id] === undefined) next[s.id] = readExternal(s.id);
+    }
+    this.externalState = next;
+  }
+
+  /** The tracked state for an external session (reactive copy, falling back to storage). */
+  private externalLog(sessionId: string): ExternalLog {
+    return this.externalState[sessionId] ?? readExternal(sessionId);
+  }
+
+  /** Persist + reactively update an external session's tracked state. */
+  private setExternal(sessionId: string, log: ExternalLog): void {
+    writeExternal(sessionId, log);
+    this.externalState = { ...this.externalState, [sessionId]: log };
+  }
+
+  private toggleExternalDone(session: ExternalSession): void {
+    const cur = this.externalLog(session.id);
+    this.setExternal(session.id, {
+      done: !cur.done,
+      actualMinutes:
+        !cur.done && cur.actualMinutes === null ? session.plannedMinutes : cur.actualMinutes,
+    });
+  }
+
+  private setExternalMinutes(sessionId: string, raw: string): void {
+    const cur = this.externalLog(sessionId);
+    this.setExternal(sessionId, { ...cur, actualMinutes: raw === '' ? null : Number(raw) });
   }
 
   private closeTracker(): void {
@@ -1306,12 +1504,15 @@ export class GfApp extends LitElement {
         </div>
 
         <fieldset class="block">
-          <legend>Time budget (minutes)</legend>
+          <legend>Default time budget (minutes)</legend>
+          <p class="hint">
+            Applies to every training session unless you override it per session below.
+          </p>
           <div class="grid">
             ${this.renderNumber('Session', 'sessionMinutes', this.sessionMinutes, 20, 180)}
             ${this.renderNumber('Warm-up', 'warmupMinutes', this.warmupMinutes, 0, 30)}
             ${this.renderNumber('Cool-down', 'cooldownMinutes', this.cooldownMinutes, 0, 30)}
-            ${this.renderNumber('Physio (first block)', 'physioMinutes', this.physioMinutes, 0, 30)}
+            ${this.renderNumber('Physio', 'physioMinutes', this.physioMinutes, 0, 30)}
           </div>
         </fieldset>
 
@@ -1381,41 +1582,179 @@ export class GfApp extends LitElement {
       <div class="day-row" data-testid=${`dayrow-${day.weekday}`}>
         <div class="day-head">
           <strong>${weekdayLabel(day.weekday)}</strong>
-          <select
-            data-testid=${`day-mode-${day.weekday}`}
-            @change=${(e: Event) =>
-              this.setDayMode(
-                day.weekday,
-                (e.target as HTMLSelectElement).value as 'train' | DayActivity,
-              )}
-          >
-            <option value="train" ?selected=${day.mode === 'train'}>Training</option>
-            ${ACTIVITIES.map(
-              (a) => html`<option value=${a} ?selected=${day.mode === a}>${titleCase(a)}</option>`,
-            )}
-          </select>
+          <div class="session-add">
+            <button
+              type="button"
+              class="ghost small"
+              data-testid=${`add-training-${day.weekday}`}
+              @click=${() => this.addSession(day.weekday, 'training')}
+            >
+              + Training
+            </button>
+            <button
+              type="button"
+              class="ghost small"
+              data-testid=${`add-external-${day.weekday}`}
+              @click=${() => this.addSession(day.weekday, 'external')}
+            >
+              + Activity
+            </button>
+          </div>
         </div>
-        ${day.mode === 'train'
-          ? html`
-              <div class="chips small" data-testid=${`day-focus-${day.weekday}`}>
-                ${MUSCLES.map(
-                  (m) => html`
-                    <button
-                      type="button"
-                      class=${day.focus.includes(m) ? 'chip on' : 'chip'}
-                      data-testid=${`focus-${day.weekday}-${m}`}
-                      aria-pressed=${day.focus.includes(m)}
-                      @click=${() => this.toggleFocus(day.weekday, m)}
-                    >
-                      ${titleCase(m)}
-                    </button>
-                  `,
+        ${day.sessions.length === 0
+          ? html`<p class="blocked-note" data-testid=${`rest-${day.weekday}`}>
+              Rest day — no sessions.
+            </p>`
+          : html`<div class="session-list">
+              ${day.sessions.map((s, i) => this.renderSessionConfig(day.weekday, i, s))}
+            </div>`}
+      </div>
+    `;
+  }
+
+  private renderSessionConfig(weekday: Weekday, index: number, s: SessionConfig): TemplateResult {
+    const removeBtn = html`
+      <button
+        type="button"
+        class="session-remove"
+        data-testid=${`remove-session-${weekday}-${index}`}
+        aria-label="Remove session"
+        @click=${() => this.removeSession(weekday, index)}
+      >
+        ✕
+      </button>
+    `;
+    if (s.kind === 'external') {
+      return html`
+        <div class="session-cfg external" data-testid=${`session-${weekday}-${index}`}>
+          <div class="session-cfg-head">
+            <span class="session-tag ext">Activity</span>
+            ${removeBtn}
+          </div>
+          <div class="grid">
+            <label class="field">
+              <span>Type</span>
+              <select
+                data-testid=${`session-activity-${weekday}-${index}`}
+                @change=${(e: Event) => {
+                  const activity = (e.target as HTMLSelectElement).value as ExternalActivity;
+                  this.updateSession(weekday, index, (cur) =>
+                    cur.kind === 'external' ? { ...cur, activity } : cur,
+                  );
+                }}
+              >
+                ${ACTIVITIES.map(
+                  (a) =>
+                    html`<option value=${a} ?selected=${s.activity === a}>
+                      ${ACTIVITY_LABELS[a]}
+                    </option>`,
                 )}
-              </div>
-            `
-          : html`<p class="blocked-note">
-              Blocked for ${titleCase(day.mode)} — no lifting generated.
-            </p>`}
+              </select>
+            </label>
+            <label class="field">
+              <span>Minutes</span>
+              <input
+                type="number"
+                inputmode="numeric"
+                min="0"
+                max="600"
+                data-testid=${`session-minutes-${weekday}-${index}`}
+                .value=${String(s.plannedMinutes)}
+                @input=${(e: Event) => {
+                  const plannedMinutes = Number((e.target as HTMLInputElement).value);
+                  this.updateSession(weekday, index, (cur) =>
+                    cur.kind === 'external' ? { ...cur, plannedMinutes } : cur,
+                  );
+                }}
+              />
+            </label>
+          </div>
+        </div>
+      `;
+    }
+    return html`
+      <div class="session-cfg training" data-testid=${`session-${weekday}-${index}`}>
+        <div class="session-cfg-head">
+          <span class="session-tag">Training</span>
+          ${removeBtn}
+        </div>
+        <div class="chips small" data-testid=${`session-focus-${weekday}-${index}`}>
+          ${MUSCLES.map(
+            (m) => html`
+              <button
+                type="button"
+                class=${s.focus.includes(m) ? 'chip on' : 'chip'}
+                data-testid=${`focus-${weekday}-${index}-${m}`}
+                aria-pressed=${s.focus.includes(m)}
+                @click=${() => this.toggleSessionFocus(weekday, index, m)}
+              >
+                ${titleCase(m)}
+              </button>
+            `,
+          )}
+        </div>
+        <details class="time-override">
+          <summary data-testid=${`time-override-${weekday}-${index}`}>Custom time & physio</summary>
+          <div class="grid">
+            <label class="field">
+              <span>Session min</span>
+              <input
+                type="number"
+                inputmode="numeric"
+                min="20"
+                max="180"
+                placeholder=${String(this.sessionMinutes)}
+                data-testid=${`override-session-${weekday}-${index}`}
+                .value=${s.sessionMinutes === null ? '' : String(s.sessionMinutes)}
+                @input=${(e: Event) => {
+                  const raw = (e.target as HTMLInputElement).value;
+                  const sessionMinutes = raw === '' ? null : Number(raw);
+                  this.updateSession(weekday, index, (cur) =>
+                    cur.kind === 'training' ? { ...cur, sessionMinutes } : cur,
+                  );
+                }}
+              />
+            </label>
+            <label class="field">
+              <span>Physio min</span>
+              <input
+                type="number"
+                inputmode="numeric"
+                min="0"
+                max="30"
+                placeholder=${String(this.physioMinutes)}
+                data-testid=${`override-physio-${weekday}-${index}`}
+                .value=${s.physioMinutes === null ? '' : String(s.physioMinutes)}
+                @input=${(e: Event) => {
+                  const raw = (e.target as HTMLInputElement).value;
+                  const physioMinutes = raw === '' ? null : Number(raw);
+                  this.updateSession(weekday, index, (cur) =>
+                    cur.kind === 'training' ? { ...cur, physioMinutes } : cur,
+                  );
+                }}
+              />
+            </label>
+            <label class="field">
+              <span>Physio placement</span>
+              <select
+                data-testid=${`override-physio-pos-${weekday}-${index}`}
+                @change=${(e: Event) => {
+                  const physioPosition = Number((e.target as HTMLSelectElement).value);
+                  this.updateSession(weekday, index, (cur) =>
+                    cur.kind === 'training' ? { ...cur, physioPosition } : cur,
+                  );
+                }}
+              >
+                ${PHYSIO_POSITIONS.map(
+                  (label, pos) =>
+                    html`<option value=${pos} ?selected=${s.physioPosition === pos}>
+                      ${label}
+                    </option>`,
+                )}
+              </select>
+            </label>
+          </div>
+        </details>
       </div>
     `;
   }
@@ -1468,26 +1807,25 @@ export class GfApp extends LitElement {
 
   private renderDayCard(day: PlanDay): TemplateResult {
     const prog = this.progress[day.id];
-    const blocked = day.activity !== undefined;
+    const rest = day.sessions.length === 0;
+    const hasTraining = day.sessions.some((s) => s.kind === 'training');
     return html`
-      <article class=${blocked ? 'card blocked' : 'card'} data-testid=${`card-${day.weekday}`}>
+      <article class=${rest ? 'card rest' : 'card'} data-testid=${`card-${day.weekday}`}>
         <header class="card-head">
           <h2>${weekdayLabel(day.weekday)}</h2>
           <span class="mins">${day.estMinutes}m</span>
         </header>
-        ${blocked
-          ? html`<p class="activity" data-testid=${`activity-${day.weekday}`}>
-              ${day.label ?? titleCase(day.activity ?? 'rest')}
-            </p>`
+        ${rest
+          ? html`<p class="activity" data-testid=${`rest-card-${day.weekday}`}>Rest day</p>`
           : html`
-              <p class="focus">${day.focus.map((m) => titleCase(m)).join(' · ')}</p>
-              <ul class="blocks">
-                ${day.blocks.map(
-                  (b) =>
-                    html`<li><span class="btag ${b.type}">${b.title}</span> ${b.estMinutes}m</li>`,
+              <div class="session-cards" data-testid=${`sessions-${day.weekday}`}>
+                ${day.sessions.map((s) =>
+                  s.kind === 'training'
+                    ? this.renderTrainingSessionCard(s)
+                    : this.renderExternalSessionCard(s),
                 )}
-              </ul>
-              ${prog !== undefined
+              </div>
+              ${hasTraining && prog !== undefined
                 ? html`<div class="bar" data-testid=${`bar-${day.weekday}`} aria-label="progress">
                     <span style=${`width:${prog.percentComplete}%`}></span>
                   </div>`
@@ -1497,10 +1835,40 @@ export class GfApp extends LitElement {
                 data-testid=${`track-${day.weekday}`}
                 @click=${() => this.openTracker(day.id)}
               >
-                Track session
+                ${hasTraining ? 'Track session' : 'Track activity'}
               </button>
             `}
       </article>
+    `;
+  }
+
+  /** A single training session shown on a day card: focus + timed blocks. */
+  private renderTrainingSessionCard(s: TrainingSession): TemplateResult {
+    return html`
+      <div class="session-card training" data-testid=${`session-card-${s.id}`}>
+        <p class="focus">${s.focus.map((m) => titleCase(m)).join(' · ')}</p>
+        <ul class="blocks">
+          ${s.blocks.map(
+            (b) => html`<li><span class="btag ${b.type}">${b.title}</span> ${b.estMinutes}m</li>`,
+          )}
+        </ul>
+      </div>
+    `;
+  }
+
+  /** A single external session shown on a day card: activity + planned minutes. */
+  private renderExternalSessionCard(s: ExternalSession): TemplateResult {
+    const log = this.externalLog(s.id);
+    return html`
+      <div
+        class=${log.done ? 'session-card external done' : 'session-card external'}
+        data-testid=${`session-card-${s.id}`}
+      >
+        <p class="activity">
+          <span class="btag physio">${s.label ?? ACTIVITY_LABELS[s.activity]}</span>
+          ${s.plannedMinutes}m planned${log.done ? html` · done ✓` : nothing}
+        </p>
+      </div>
     `;
   }
 
@@ -1509,6 +1877,7 @@ export class GfApp extends LitElement {
     const day = plan?.days.find((d) => d.id === this.selectedDayId);
     if (plan === undefined || plan === null || day === undefined) return html`${nothing}`;
     const prog = this.progress[day.id];
+    const hasTraining = day.sessions.some((s) => s.kind === 'training');
     return html`
       <div class="overlay" data-testid="tracker" @click=${this.onOverlayClick}>
         <div class="sheet" @click=${(e: Event) => e.stopPropagation()}>
@@ -1516,13 +1885,15 @@ export class GfApp extends LitElement {
             <h2>${weekdayLabel(day.weekday)} session</h2>
             <button class="icon" data-testid="tracker-close" @click=${this.closeTracker}>✕</button>
           </header>
-          ${prog !== undefined
+          ${hasTraining && prog !== undefined
             ? html`<div class="bar big" data-testid="tracker-bar">
                   <span style=${`width:${prog.percentComplete}%`}></span>
                 </div>
                 <p class="pct" data-testid="tracker-pct">${prog.percentComplete}% complete</p>`
             : nothing}
-          <div class="track-list">${day.blocks.map((b) => this.renderTrackBlock(day.id, b))}</div>
+          <div class="track-list">
+            ${day.sessions.map((s, i) => this.renderTrackSession(day.id, s, i))}
+          </div>
           ${this.renderVolumeCard('Today’s volume', this.dayVolume[day.id], 'day-volume')}
           ${this.renderVolumeCard('Week volume so far', this.weekVolume, 'tracker-week-volume')}
         </div>
@@ -1530,7 +1901,53 @@ export class GfApp extends LitElement {
     `;
   }
 
-  private renderTrackBlock(dayId: string, block: PlanDay['blocks'][number]): TemplateResult {
+  /** Render one session inside the tracker: training blocks or an external log. */
+  private renderTrackSession(
+    dayId: string,
+    s: TrainingSession | ExternalSession,
+    index: number,
+  ): TemplateResult {
+    if (s.kind === 'external') {
+      const log = this.externalLog(s.id);
+      return html`
+        <div class="track-session external" data-testid=${`track-session-${s.id}`}>
+          <h3>${s.label ?? ACTIVITY_LABELS[s.activity]} · ${s.plannedMinutes}m planned</h3>
+          <div class="ext-track">
+            <label class="field">
+              <span>Actual minutes</span>
+              <input
+                type="number"
+                inputmode="numeric"
+                min="0"
+                max="600"
+                data-testid=${`ext-minutes-${s.id}`}
+                .value=${log.actualMinutes === null ? '' : String(log.actualMinutes)}
+                @input=${(e: Event) =>
+                  this.setExternalMinutes(s.id, (e.target as HTMLInputElement).value)}
+              />
+            </label>
+            <button
+              class=${log.done ? 'cta done' : 'cta'}
+              data-testid=${`ext-done-${s.id}`}
+              @click=${() => this.toggleExternalDone(s)}
+            >
+              ${log.done ? 'Done ✓' : 'Mark done'}
+            </button>
+          </div>
+        </div>
+      `;
+    }
+    const heading =
+      s.label ?? `Session ${index + 1} · ${s.focus.map((m) => titleCase(m)).join(' · ')}`;
+    return html`
+      <div class="track-session training" data-testid=${`track-session-${s.id}`}>
+        <h3 class="session-heading">${heading}</h3>
+        ${s.blocks.map((b) => this.renderTrackBlock(dayId, b))}
+      </div>
+    `;
+  }
+
+  private renderTrackBlock(dayId: string, block: SessionBlock): TemplateResult {
     if (block.slots.length === 0) {
       return html`<div class="track-block">
         <h3>${block.title}</h3>
@@ -1933,6 +2350,121 @@ export class GfApp extends LitElement {
       color: var(--gf-muted);
       margin: 4px 0 0;
       font-size: 0.9rem;
+    }
+    .hint {
+      color: var(--gf-muted);
+      margin: -4px 0 10px;
+      font-size: 0.8rem;
+    }
+    .session-add {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .ghost.small {
+      min-height: 34px;
+      padding: 4px 10px;
+      font-size: 0.78rem;
+    }
+    .session-list {
+      display: grid;
+      gap: 10px;
+    }
+    .session-cfg {
+      border: 1px solid var(--gf-border);
+      border-radius: var(--gf-radius-sm);
+      padding: 10px;
+      background: var(--gf-surface-2, var(--gf-surface));
+    }
+    .session-cfg-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .session-tag {
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: var(--gf-accent-text, #fff);
+      background: var(--gf-accent);
+      border-radius: var(--gf-radius-pill);
+      padding: 3px 10px;
+    }
+    .session-tag.ext {
+      background: var(--gf-accent-2, var(--gf-accent));
+    }
+    .session-remove {
+      appearance: none;
+      border: 1px solid var(--gf-border);
+      background: var(--gf-surface);
+      color: var(--gf-muted);
+      border-radius: var(--gf-radius-sm);
+      cursor: pointer;
+      min-height: 32px;
+      min-width: 32px;
+      font-size: 0.9rem;
+      line-height: 1;
+    }
+    .session-remove:hover {
+      border-color: var(--gf-accent);
+      color: var(--gf-accent);
+    }
+    .time-override {
+      margin-top: 8px;
+    }
+    .time-override > summary {
+      cursor: pointer;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--gf-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      list-style: revert;
+    }
+    .time-override .grid {
+      margin-top: 10px;
+    }
+    .session-cards {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .session-card {
+      border: 1px solid var(--gf-border);
+      border-radius: var(--gf-radius-sm);
+      padding: 10px;
+      background: var(--gf-surface-2, var(--gf-surface));
+    }
+    .session-card.external.done,
+    .session-card.external {
+      border-left: 3px solid var(--gf-accent-2, var(--gf-accent));
+    }
+    .session-card.external.done {
+      border-left-color: var(--gf-good, #16a34a);
+    }
+    .track-session {
+      margin-bottom: 8px;
+    }
+    .track-session > .session-heading {
+      margin: 4px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--gf-border);
+      font-size: 1rem;
+    }
+    .ext-track {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .ext-track .field {
+      flex: 1 1 120px;
+    }
+    .ext-track .cta {
+      flex: 0 0 auto;
     }
     .calc-result {
       display: grid;

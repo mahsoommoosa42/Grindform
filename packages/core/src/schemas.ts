@@ -97,11 +97,24 @@ export const BlockTypeSchema = z.enum(['warmup', 'physio', 'main', 'accessory', 
 export type BlockType = z.infer<typeof BlockTypeSchema>;
 
 /**
- * A preplanned, non-generated activity that can occupy a whole day. The
- * generator skips these days entirely (they're owned by the user).
+ * A self-tracked activity the user performs outside Grindform's
+ * prescribed lifting — a run, a swim, a physio appointment, etc. These
+ * are recorded as {@link ExternalSessionSpec | external sessions} sitting
+ * alongside any training sessions on a day; the generator does not
+ * prescribe exercises for them.
  */
-export const DayActivitySchema = z.enum(['rest', 'pilates', 'physio', 'steps', 'custom']);
-export type DayActivity = z.infer<typeof DayActivitySchema>;
+export const ExternalActivitySchema = z.enum([
+  'run',
+  'walk',
+  'cycle',
+  'swim',
+  'pilates',
+  'physio',
+  'mobility',
+  'sport',
+  'custom',
+]);
+export type ExternalActivity = z.infer<typeof ExternalActivitySchema>;
 
 // ---------------------------------------------------------------------------
 // Themes.
@@ -153,35 +166,84 @@ export type RepScheme = z.infer<typeof RepSchemeSchema>;
 /**
  * Per-session time budget in minutes for the non-exercise blocks. The
  * generator subtracts these from the session length to size the main +
- * accessory work. `physioMinutes` is the optional first-15-minutes
- * prehab block (0 disables it).
+ * accessory work. `physioMinutes` is an optional prehab block (0
+ * disables it); `physioPosition` chooses where that block sits in the
+ * session — see {@link PHYSIO_POSITIONS}: 0 before the warm-up (the
+ * classic "first 15"), 1 after the warm-up, 2 after the main lift, 3
+ * after the accessories, 4 at the very end (before/replacing cool-down).
+ *
+ * A budget can be set globally for the whole plan and overridden
+ * per-session, so different days can run for different lengths.
  */
 export const TimeBudgetSchema = z.object({
   sessionMinutes: z.number().int().min(20).max(180).default(60),
   warmupMinutes: z.number().int().min(0).max(30).default(8),
   cooldownMinutes: z.number().int().min(0).max(30).default(5),
   physioMinutes: z.number().int().min(0).max(30).default(0),
+  physioPosition: z.number().int().min(0).max(4).default(0),
 });
 export type TimeBudget = z.infer<typeof TimeBudgetSchema>;
 
 /**
- * One entry in the weekly schedule: either a generated training day
- * (`focus` = the muscle groups to train) or a blocked preplanned day
- * (`activity` set, `focus` empty). Exactly one of the two modes is used,
- * enforced by {@link DaySpecSchema}'s refinement.
+ * A prescribed (generated) lifting session: the muscle groups to train
+ * plus an optional per-session time-budget override (so this session can
+ * be longer/shorter, or place its physio block differently, than the
+ * plan default). A day may hold more than one — e.g. an AM and a PM
+ * session.
  */
-export const DaySpecSchema = z
-  .object({
-    weekday: WeekdaySchema,
-    activity: DayActivitySchema.optional(),
-    focus: z.array(MuscleGroupSchema).default([]),
-    label: z.string().min(1).max(60).optional(),
-  })
-  .refine((d) => d.activity !== undefined || d.focus.length > 0, {
-    message: 'a day must be either a blocked activity or have a training focus',
-    path: ['focus'],
-  });
+export const TrainingSessionSpecSchema = z.object({
+  kind: z.literal('training'),
+  focus: z.array(MuscleGroupSchema).min(1),
+  label: z.string().min(1).max(60).optional(),
+  timeBudget: TimeBudgetSchema.optional(),
+});
+export type TrainingSessionSpec = z.infer<typeof TrainingSessionSpecSchema>;
+
+/**
+ * A self-tracked, non-prescribed session (a run, swim, physio
+ * appointment, …) the user logs alongside their lifting. Grindform does
+ * not generate exercises for it; it carries a planned duration only.
+ */
+export const ExternalSessionSpecSchema = z.object({
+  kind: z.literal('external'),
+  activity: ExternalActivitySchema,
+  label: z.string().min(1).max(60).optional(),
+  plannedMinutes: z.number().int().min(0).max(600).default(30),
+});
+export type ExternalSessionSpec = z.infer<typeof ExternalSessionSpecSchema>;
+
+/** One planned session within a day — either training or external. */
+export const SessionSpecSchema = z.discriminatedUnion('kind', [
+  TrainingSessionSpecSchema,
+  ExternalSessionSpecSchema,
+]);
+export type SessionSpec = z.infer<typeof SessionSpecSchema>;
+
+/**
+ * One entry in the weekly schedule: a weekday holding an ordered list of
+ * sessions. A day with no sessions is a rest day. Sessions mix freely —
+ * a day can have one or more training sessions and/or external sessions
+ * (e.g. a morning run plus an evening lift).
+ */
+export const DaySpecSchema = z.object({
+  weekday: WeekdaySchema,
+  sessions: z.array(SessionSpecSchema).max(4).default([]),
+  label: z.string().min(1).max(60).optional(),
+});
 export type DaySpec = z.infer<typeof DaySpecSchema>;
+
+/**
+ * Human-readable labels for the {@link TimeBudget.physioPosition} anchor
+ * points, indexed 0–4. Exposed so the UI and generator share one source
+ * of truth for where a physio block can sit in a session.
+ */
+export const PHYSIO_POSITIONS: readonly string[] = [
+  'Before warm-up',
+  'After warm-up',
+  'After main lift',
+  'After accessories',
+  'At the end',
+];
 
 /**
  * The full input that drives weekly plan generation. `daysPerWeek` is
@@ -200,6 +262,7 @@ export const GeneratePlanInputSchema = z.object({
     warmupMinutes: 8,
     cooldownMinutes: 5,
     physioMinutes: 0,
+    physioPosition: 0,
   }),
   days: z.array(DaySpecSchema).min(1).max(7),
   variation: z.enum(['A', 'B']).default('A'),

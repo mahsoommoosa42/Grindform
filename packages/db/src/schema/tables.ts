@@ -14,13 +14,11 @@ import type {
   AccountStatus,
   AuditAction,
   AuditId,
-  DayActivity,
   DayId,
   ExerciseSlug,
   Experience,
   Goal,
   LogId,
-  MuscleGroup,
   PlanId,
   Role,
   SessionId,
@@ -30,7 +28,7 @@ import type {
   UserId,
   Weekday,
 } from '@grindform/core';
-import type { SessionBlock } from '@grindform/planner';
+import type { PlanSession } from '@grindform/planner';
 
 /** A registered account. Email is stored already-normalised (lowercased). */
 export const users = pgTable('users', {
@@ -87,7 +85,7 @@ export const plans = pgTable('plans', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-/** One day within a plan — either a training day or a blocked activity. */
+/** One day within a plan — an ordered list of training/external sessions. */
 export const planDays = pgTable('plan_days', {
   id: text('id').primaryKey().$type<DayId>(),
   planId: text('plan_id')
@@ -96,10 +94,8 @@ export const planDays = pgTable('plan_days', {
     .$type<PlanId>(),
   position: integer('position').notNull(),
   weekday: text('weekday').notNull().$type<Weekday>(),
-  activity: text('activity').$type<DayActivity>(),
   label: text('label'),
-  focus: jsonb('focus').notNull().$type<readonly MuscleGroup[]>(),
-  blocks: jsonb('blocks').notNull().$type<readonly SessionBlock[]>(),
+  sessions: jsonb('sessions').notNull().$type<readonly PlanSession[]>(),
   estMinutes: integer('est_minutes').notNull(),
 });
 

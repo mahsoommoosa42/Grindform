@@ -48,6 +48,9 @@ export type PlanId = Brand<string, 'PlanId'>;
 /** Identifier for a single day within a plan. Prefix: `day_`. */
 export type DayId = Brand<string, 'DayId'>;
 
+/** Identifier for one session within a plan day. Prefix: `pss_`. */
+export type PlanSessionId = Brand<string, 'PlanSessionId'>;
+
 /** Identifier for one exercise slot inside a session. Prefix: `slt_`. */
 export type SlotId = Brand<string, 'SlotId'>;
 
@@ -64,6 +67,7 @@ const PREFIX = {
   audit: 'aud',
   plan: 'pln',
   day: 'day',
+  planSession: 'pss',
   slot: 'slt',
   log: 'log',
 } as const;
@@ -93,6 +97,9 @@ export const newPlanId = (): PlanId => make<PlanId>(PREFIX.plan);
 
 /** Mint a fresh, time-sortable {@link DayId}. */
 export const newDayId = (): DayId => make<DayId>(PREFIX.day);
+
+/** Mint a fresh, time-sortable {@link PlanSessionId}. */
+export const newPlanSessionId = (): PlanSessionId => make<PlanSessionId>(PREFIX.planSession);
 
 /** Mint a fresh, time-sortable {@link SlotId}. */
 export const newSlotId = (): SlotId => make<SlotId>(PREFIX.slot);
@@ -124,6 +131,10 @@ export const isPlanId = (s: string): s is PlanId => matcher(PREFIX.plan).test(s)
 
 /** Type guard: true iff `s` is a syntactically-valid {@link DayId}. */
 export const isDayId = (s: string): s is DayId => matcher(PREFIX.day).test(s);
+
+/** Type guard: true iff `s` is a syntactically-valid {@link PlanSessionId}. */
+export const isPlanSessionId = (s: string): s is PlanSessionId =>
+  matcher(PREFIX.planSession).test(s);
 
 /** Type guard: true iff `s` is a syntactically-valid {@link SlotId}. */
 export const isSlotId = (s: string): s is SlotId => matcher(PREFIX.slot).test(s);

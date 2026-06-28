@@ -21,9 +21,21 @@ const makePlan = (): WeeklyPlan => {
     GeneratePlanInputSchema.parse({
       goal: 'recomp',
       days: [
-        { weekday: 'mon', focus: ['glutes'], label: 'Glute day' },
-        { weekday: 'tue', activity: 'pilates', label: 'Reformer' },
-        { weekday: 'wed', focus: ['back'] },
+        { weekday: 'mon', sessions: [{ kind: 'training', focus: ['glutes'], label: 'Glute day' }] },
+        {
+          weekday: 'tue',
+          sessions: [
+            { kind: 'external', activity: 'pilates', label: 'Reformer', plannedMinutes: 45 },
+          ],
+        },
+        {
+          weekday: 'wed',
+          label: 'Pull + run',
+          sessions: [
+            { kind: 'training', focus: ['back'] },
+            { kind: 'external', activity: 'run', plannedMinutes: 20 },
+          ],
+        },
       ],
     }),
   );
@@ -42,7 +54,7 @@ describe('plans-repo', () => {
     await dispose();
   });
 
-  it('round-trips a plan with training and blocked days', async () => {
+  it('round-trips a plan with training, external, and multi-session days', async () => {
     const userId = newUserId();
     const plan = makePlan();
     await createPlan(db, userId, plan);
@@ -53,14 +65,25 @@ describe('plans-repo', () => {
     expect(loaded?.days).toHaveLength(3);
     // Day order preserved.
     expect(loaded?.days.map((d) => d.weekday)).toEqual(['mon', 'tue', 'wed']);
-    // Training day kept its label; blocked day kept activity + label.
-    expect(loaded?.days[0]?.label).toBe('Glute day');
-    expect(loaded?.days[1]?.activity).toBe('pilates');
-    expect(loaded?.days[1]?.label).toBe('Reformer');
-    // Day without label/activity omits both.
-    expect(loaded?.days[2]?.label).toBeUndefined();
-    expect(loaded?.days[2]?.activity).toBeUndefined();
-    expect(loaded?.days[0]?.blocks.length).toBeGreaterThan(0);
+    // Monday is a single labelled training session with generated blocks.
+    const mon = loaded?.days[0]?.sessions[0];
+    expect(mon?.kind).toBe('training');
+    if (mon?.kind === 'training') {
+      expect(mon.label).toBe('Glute day');
+      expect(mon.blocks.length).toBeGreaterThan(0);
+    }
+    // Tuesday is an external Pilates session.
+    const tue = loaded?.days[1]?.sessions[0];
+    expect(tue?.kind).toBe('external');
+    if (tue?.kind === 'external') {
+      expect(tue.activity).toBe('pilates');
+      expect(tue.label).toBe('Reformer');
+    }
+    // Wednesday holds two sessions (training + run), in order, and a day label.
+    expect(loaded?.days[2]?.label).toBe('Pull + run');
+    expect(loaded?.days[2]?.sessions).toHaveLength(2);
+    expect(loaded?.days[2]?.sessions[0]?.kind).toBe('training');
+    expect(loaded?.days[2]?.sessions[1]?.kind).toBe('external');
   });
 
   it('getPlan returns undefined for an unknown id', async () => {

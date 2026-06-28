@@ -5,7 +5,13 @@
  * logged sets, with sensible defaults that individual tests override.
  */
 
-import { newDayId, newLogId, newSlotId, parseExerciseSlug } from '@grindform/core';
+import {
+  newDayId,
+  newLogId,
+  newPlanSessionId,
+  newSlotId,
+  parseExerciseSlug,
+} from '@grindform/core';
 import type { RepScheme } from '@grindform/core';
 import type { ExerciseSlot, PlanDay } from '@grindform/planner';
 import type { SetLog } from '@grindform/db';
@@ -21,14 +27,38 @@ export const makeSlot = (over: Partial<ExerciseSlot> = {}): ExerciseSlot => ({
   ...over,
 });
 
+/** A day holding one training session whose main block carries `slots`. */
 export const makeDay = (slots: readonly ExerciseSlot[]): PlanDay => ({
   id: newDayId(),
   weekday: 'mon',
-  focus: ['quads'],
   estMinutes: 60,
-  blocks: [
-    { type: 'warmup', title: 'Warm-up', estMinutes: 8, slots: [], note: 'warm up' },
-    { type: 'main', title: 'Main', estMinutes: 30, slots },
+  sessions: [
+    {
+      id: newPlanSessionId(),
+      kind: 'training',
+      focus: ['quads'],
+      estMinutes: 60,
+      blocks: [
+        { type: 'warmup', title: 'Warm-up', estMinutes: 8, slots: [], note: 'warm up' },
+        { type: 'main', title: 'Main', estMinutes: 30, slots },
+      ],
+    },
+  ],
+});
+
+/** A rest/external day with no training slots. */
+export const makeExternalDay = (): PlanDay => ({
+  id: newDayId(),
+  weekday: 'sat',
+  estMinutes: 45,
+  sessions: [
+    {
+      id: newPlanSessionId(),
+      kind: 'external',
+      activity: 'pilates',
+      plannedMinutes: 45,
+      estMinutes: 45,
+    },
   ],
 });
 

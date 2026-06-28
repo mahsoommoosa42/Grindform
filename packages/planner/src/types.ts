@@ -7,13 +7,14 @@
 
 import type {
   BlockType,
-  DayActivity,
   DayId,
   ExerciseSlug,
   Experience,
+  ExternalActivity,
   Goal,
   MuscleGroup,
   PlanId,
+  PlanSessionId,
   RepScheme,
   SlotId,
   TimeBudget,
@@ -62,17 +63,45 @@ export interface SessionBlock {
 }
 
 /**
- * One day of the week. Either a blocked preplanned activity (`activity`
- * set, `blocks` empty) or a generated training day (`focus` non-empty,
- * `blocks` populated).
+ * A generated lifting session: the muscle groups trained plus the ordered
+ * timed blocks (warm-up, physio, main, accessories, cool-down) filled
+ * with exercise slots.
+ */
+export interface TrainingSession {
+  readonly id: PlanSessionId;
+  readonly kind: 'training';
+  readonly label?: string;
+  readonly focus: readonly MuscleGroup[];
+  readonly blocks: readonly SessionBlock[];
+  readonly estMinutes: number;
+}
+
+/**
+ * A self-tracked, non-prescribed session (run, swim, physio, …) sitting
+ * alongside training. It carries a planned duration but no exercise
+ * prescription — the user tracks it themselves.
+ */
+export interface ExternalSession {
+  readonly id: PlanSessionId;
+  readonly kind: 'external';
+  readonly activity: ExternalActivity;
+  readonly label?: string;
+  readonly plannedMinutes: number;
+  readonly estMinutes: number;
+}
+
+/** One session within a day — either a generated lift or an external activity. */
+export type PlanSession = TrainingSession | ExternalSession;
+
+/**
+ * One day of the week: an ordered list of {@link PlanSession}s. A day
+ * with no sessions is a rest day. `estMinutes` sums the sessions.
  */
 export interface PlanDay {
   readonly id: DayId;
   readonly weekday: Weekday;
-  readonly activity?: DayActivity;
   readonly label?: string;
-  readonly focus: readonly MuscleGroup[];
-  readonly blocks: readonly SessionBlock[];
+  readonly sessions: readonly PlanSession[];
   readonly estMinutes: number;
 }
 

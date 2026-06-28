@@ -8,7 +8,7 @@
  */
 
 import type { ExerciseSlug, SlotId } from '@grindform/core';
-import type { ExerciseSlot, PlanDay } from '@grindform/planner';
+import type { ExerciseSlot, PlanDay, TrainingSession } from '@grindform/planner';
 import type { SetLog } from '@grindform/db';
 
 /** Completion status for a single exercise slot. */
@@ -32,9 +32,16 @@ export interface DayProgress {
   readonly slots: readonly SlotProgress[];
 }
 
-/** Flatten the exercise slots across a day's training blocks. */
+/** Flatten the exercise slots across one training session's blocks. */
+export const collectSessionSlots = (session: TrainingSession): readonly ExerciseSlot[] =>
+  session.blocks.flatMap((b) => b.slots);
+
+/**
+ * Flatten the exercise slots across every training session in a day.
+ * External sessions carry no slots and are skipped.
+ */
 export const collectSlots = (day: PlanDay): readonly ExerciseSlot[] =>
-  day.blocks.flatMap((b) => b.slots);
+  day.sessions.flatMap((s) => (s.kind === 'training' ? collectSessionSlots(s) : []));
 
 /** Summarise how much of a day has been completed, given its logged sets. */
 export const summariseDay = (day: PlanDay, logs: readonly SetLog[]): DayProgress => {

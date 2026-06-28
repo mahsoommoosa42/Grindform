@@ -1,29 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
-import { newDayId } from '@grindform/core';
-import type { PlanDay } from '@grindform/planner';
-
 import { collectSlots, summariseDay } from '../src/progress.ts';
-import { makeDay, makeLog, makeSlot } from './helpers/fixtures.ts';
+import { makeDay, makeExternalDay, makeLog, makeSlot } from './helpers/fixtures.ts';
 
 describe('collectSlots', () => {
-  it('flattens slots across training blocks, skipping empty blocks', () => {
+  it('flattens slots across training sessions, skipping empty blocks', () => {
     const slots = [makeSlot(), makeSlot()];
     expect(collectSlots(makeDay(slots))).toHaveLength(2);
+  });
+
+  it('returns no slots for an external-only day', () => {
+    expect(collectSlots(makeExternalDay())).toHaveLength(0);
   });
 });
 
 describe('summariseDay', () => {
-  it('reports 0% for a day with no exercise slots', () => {
-    const blocked: PlanDay = {
-      id: newDayId(),
-      weekday: 'sat',
-      activity: 'pilates',
-      focus: [],
-      estMinutes: 0,
-      blocks: [],
-    };
-    const progress = summariseDay(blocked, []);
+  it('reports 0% for an external-only day with no exercise slots', () => {
+    const progress = summariseDay(makeExternalDay(), []);
     expect(progress.totalSlots).toBe(0);
     expect(progress.percentComplete).toBe(0);
   });

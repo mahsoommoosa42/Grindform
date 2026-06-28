@@ -30,10 +30,12 @@ test('training days list their time blocks', async ({ page }) => {
   await expect(page.getByTestId('track-mon')).toBeVisible();
 });
 
-test('blocked days show their activity and no tracker button', async ({ page }) => {
-  await expect(page.getByTestId('activity-wed')).toContainText('Pilates');
-  await expect(page.getByTestId('track-wed')).toHaveCount(0);
-  await expect(page.getByTestId('activity-sun')).toContainText('Rest');
+test('external-activity days show the activity; empty days are rest days', async ({ page }) => {
+  // Wednesday defaults to an external Pilates session.
+  await expect(page.getByTestId('card-wed')).toContainText('Pilates');
+  // Sunday defaults to no sessions — a rest day with no tracker button.
+  await expect(page.getByTestId('rest-card-sun')).toContainText('Rest day');
+  await expect(page.getByTestId('track-sun')).toHaveCount(0);
 });
 
 test('can navigate back to Build and into My week', async ({ page }) => {
@@ -48,4 +50,14 @@ test('boredom swap rebuilds the week', async ({ page }) => {
   await tapOrClick(page, 'rebuild');
   await expect(page.getByTestId('week')).toBeVisible();
   await expect(page.getByTestId('card-mon')).toBeVisible();
+});
+
+test('an external activity session can be marked done from its tracker', async ({ page }) => {
+  // Wednesday is an external Pilates session; open its tracker and complete it.
+  await tapOrClick(page, 'track-wed');
+  await expect(page.getByTestId('tracker')).toBeVisible();
+  const done = page.locator('[data-testid^="ext-done-"]').first();
+  await expect(done).toContainText('Mark done');
+  await done.click();
+  await expect(done).toContainText('Done');
 });

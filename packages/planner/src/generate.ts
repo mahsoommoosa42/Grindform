@@ -13,21 +13,39 @@
 
 import { exercisesForMuscle } from '@grindform/catalog';
 import type { Exercise } from '@grindform/catalog';
-import { err, newDayId, newPlanId, newSlotId, ok, ValidationError } from '@grindform/core';
+import {
+  err,
+  newDayId,
+  newPlanId,
+  newPlanSessionId,
+  newSlotId,
+  ok,
+  ValidationError,
+} from '@grindform/core';
 import type {
-  DayActivity,
   DaySpec,
   ExerciseRole,
+  ExternalSessionSpec,
   GeneratePlanInput,
   MuscleGroup,
   Result,
+  TimeBudget,
+  TrainingSessionSpec,
 } from '@grindform/core';
 
 import { estimateSlotMinutes, GOAL_PROFILES, schemeForRole } from './profiles.ts';
 import type { GoalProfile } from './profiles.ts';
 import { makeRng } from './rng.ts';
 import type { Rng } from './rng.ts';
-import type { ExerciseSlot, PlanDay, SessionBlock, WeeklyPlan } from './types.ts';
+import type {
+  ExerciseSlot,
+  ExternalSession,
+  PlanDay,
+  PlanSession,
+  SessionBlock,
+  TrainingSession,
+  WeeklyPlan,
+} from './types.ts';
 
 /** Fraction of working time loosely reserved for the main lift(s). */
 const MAIN_TIME_SHARE = 0.45;
@@ -93,29 +111,37 @@ const pickExercise = (
   return ordered.find((c) => !used.has(c.slug));
 };
 
-/** Assemble the ordered prelude blocks (physio first, then warm-up). */
-const preludeBlocks = (input: GeneratePlanInput): SessionBlock[] => {
-  const blocks: SessionBlock[] = [];
-  const { physioMinutes, warmupMinutes } = input.timeBudget;
-  if (physioMinutes > 0) {
-    blocks.push({
-      type: 'physio',
-      title: 'Physio (first 15)',
-      estMinutes: physioMinutes,
-      slots: [],
-      note: PHYSIO_NOTE,
-    });
-  }
-  if (warmupMinutes > 0) {
-    blocks.push({
-      type: 'warmup',
-      title: 'Warm-up',
-      estMinutes: warmupMinutes,
-      slots: [],
-      note: WARMUP_NOTE,
-    });
-  }
-  return blocks;
+/**
+ * The non-physio block types in their fixed session order. The physio
+ * block is inserted relative to these, so `physioPosition` p means "after
+ * the first p of these block types that are present".
+ */
+const REFERENCE_ORDER = ['warmup', 'main', 'accessory', 'cooldown'] as const;
+
+/** Build the optional physio block, or `undefined` when disabled. */
+const physioBlock = (physioMinutes: number): SessionBlock | undefined =>
+  physioMinutes > 0
+    ? { type: 'physio', title: 'Physio', estMinutes: physioMinutes, slots: [], note: PHYSIO_NOTE }
+    : undefined;
+
+/**
+ * Insert the physio block among the assembled session blocks at the
+ * anchor chosen by `physioPosition` (0–4). The anchor is expressed
+ * relative to block *types*, so it stays well-defined even when some
+ * blocks are absent (e.g. no warm-up): physio still lands "after the
+ * warm-up slot" by counting how many preceding reference types exist.
+ */
+const insertPhysio = (
+  blocks: readonly SessionBlock[],
+  physio: SessionBlock | undefined,
+  physioPosition: number,
+): SessionBlock[] => {
+  if (physio === undefined) return [...blocks];
+  const preceding = new Set(REFERENCE_ORDER.slice(0, physioPosition));
+  const index = blocks.filter((b) =>
+    preceding.has(b.type as (typeof REFERENCE_ORDER)[number]),
+  ).length;
+  return [...blocks.slice(0, index), physio, ...blocks.slice(index)];
 };
 
 /** Sum estimated minutes across a slot list. */
@@ -206,14 +232,20 @@ const selectConditioning = (
   return makeSlot(profile, pick, 'conditioning');
 };
 
-/** Build a single training day, or fail if constraints leave it empty. */
-const buildTrainingDay = (
-  spec: DaySpec,
+/**
+ * Build a single prescribed training session, or fail if constraints
+ * leave it empty. Uses the session's own time-budget override when
+ * present, otherwise the plan default, so different sessions can run for
+ * different lengths and place their physio block independently.
+ */
+const buildTrainingSession = (
+  spec: TrainingSessionSpec,
   profile: GoalProfile,
   input: GeneratePlanInput,
   rng: Rng,
-): Result<PlanDay, ValidationError> => {
-  const { sessionMinutes, warmupMinutes, cooldownMinutes, physioMinutes } = input.timeBudget;
+): Result<TrainingSession, ValidationError> => {
+  const budget: TimeBudget = spec.timeBudget ?? input.timeBudget;
+  const { sessionMinutes, warmupMinutes, cooldownMinutes, physioMinutes, physioPosition } = budget;
   const workingMinutes = Math.max(
     0,
     sessionMinutes - warmupMinutes - cooldownMinutes - physioMinutes,
@@ -238,16 +270,24 @@ const buildTrainingDay = (
 
   if (mains.length === 0 && accessoryAndFinisher.length === 0) {
     return err(
-      new ValidationError('no exercises match the chosen equipment / experience for this day', {
-        weekday: spec.weekday,
+      new ValidationError('no exercises match the chosen equipment / experience for this session', {
         focus: spec.focus,
       }),
     );
   }
 
-  const blocks: SessionBlock[] = preludeBlocks(input);
+  const core: SessionBlock[] = [];
+  if (warmupMinutes > 0) {
+    core.push({
+      type: 'warmup',
+      title: 'Warm-up',
+      estMinutes: warmupMinutes,
+      slots: [],
+      note: WARMUP_NOTE,
+    });
+  }
   if (mains.length > 0) {
-    blocks.push({
+    core.push({
       type: 'main',
       title: 'Main lift',
       estMinutes: sumSlotMinutes(mains),
@@ -255,7 +295,7 @@ const buildTrainingDay = (
     });
   }
   if (accessoryAndFinisher.length > 0) {
-    blocks.push({
+    core.push({
       type: 'accessory',
       title: 'Accessories',
       estMinutes: sumSlotMinutes(accessoryAndFinisher),
@@ -263,7 +303,7 @@ const buildTrainingDay = (
     });
   }
   if (cooldownMinutes > 0) {
-    blocks.push({
+    core.push({
       type: 'cooldown',
       title: 'Cool-down',
       estMinutes: cooldownMinutes,
@@ -272,33 +312,61 @@ const buildTrainingDay = (
     });
   }
 
+  const blocks = insertPhysio(core, physioBlock(physioMinutes), physioPosition);
   const estMinutes = blocks.reduce((acc, b) => acc + b.estMinutes, 0);
+  const session: TrainingSession = {
+    id: newPlanSessionId(),
+    kind: 'training',
+    focus: spec.focus,
+    blocks,
+    estMinutes,
+    ...(spec.label === undefined ? {} : { label: spec.label }),
+  };
+  return ok(session);
+};
+
+/** Build a self-tracked external session (run, swim, physio, …). */
+const buildExternalSession = (spec: ExternalSessionSpec): ExternalSession => ({
+  id: newPlanSessionId(),
+  kind: 'external',
+  activity: spec.activity,
+  plannedMinutes: spec.plannedMinutes,
+  estMinutes: spec.plannedMinutes,
+  ...(spec.label === undefined ? {} : { label: spec.label }),
+});
+
+/** Build a day from its session specs, failing if a training session can't be filled. */
+const buildDay = (
+  spec: DaySpec,
+  profile: GoalProfile,
+  input: GeneratePlanInput,
+  rng: Rng,
+): Result<PlanDay, ValidationError> => {
+  const sessions: PlanSession[] = [];
+  for (const sessionSpec of spec.sessions) {
+    if (sessionSpec.kind === 'external') {
+      sessions.push(buildExternalSession(sessionSpec));
+      continue;
+    }
+    const built = buildTrainingSession(sessionSpec, profile, input, rng);
+    if (!built.ok) return built;
+    sessions.push(built.value);
+  }
+  const estMinutes = sessions.reduce((acc, s) => acc + s.estMinutes, 0);
   const day: PlanDay = {
     id: newDayId(),
     weekday: spec.weekday,
-    focus: spec.focus,
-    blocks,
+    sessions,
     estMinutes,
     ...(spec.label === undefined ? {} : { label: spec.label }),
   };
   return ok(day);
 };
 
-/** Build a blocked, preplanned (non-training) day. Always succeeds. */
-const buildBlockedDay = (spec: DaySpec, activity: DayActivity): PlanDay => ({
-  id: newDayId(),
-  weekday: spec.weekday,
-  activity,
-  focus: [],
-  blocks: [],
-  estMinutes: 0,
-  ...(spec.label === undefined ? {} : { label: spec.label }),
-});
-
 /**
  * Generate a full weekly plan from validated input.
  *
- * Returns `Err(ValidationError)` if any training day cannot be filled
+ * Returns `Err(ValidationError)` if any training session cannot be filled
  * given the equipment / experience constraints; otherwise `Ok(plan)`.
  */
 export const generatePlan = (input: GeneratePlanInput): Result<WeeklyPlan, ValidationError> => {
@@ -307,11 +375,7 @@ export const generatePlan = (input: GeneratePlanInput): Result<WeeklyPlan, Valid
   const days: PlanDay[] = [];
 
   for (const spec of input.days) {
-    if (spec.activity !== undefined) {
-      days.push(buildBlockedDay(spec, spec.activity));
-      continue;
-    }
-    const built = buildTrainingDay(spec, profile, input, rng);
+    const built = buildDay(spec, profile, input, rng);
     if (!built.ok) return built;
     days.push(built.value);
   }

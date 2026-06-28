@@ -31,10 +31,8 @@ type PlanDayRow = typeof planDays.$inferSelect;
 const mapDay = (row: PlanDayRow): PlanDay => ({
   id: row.id,
   weekday: row.weekday,
-  focus: row.focus,
-  blocks: row.blocks,
+  sessions: row.sessions,
   estMinutes: row.estMinutes,
-  ...(row.activity === null ? {} : { activity: row.activity }),
   ...(row.label === null ? {} : { label: row.label }),
 });
 
@@ -55,10 +53,8 @@ export const createPlan = async (db: DbOrTx, userId: UserId, plan: WeeklyPlan): 
         planId: plan.id,
         position,
         weekday: day.weekday,
-        activity: day.activity ?? null,
         label: day.label ?? null,
-        focus: day.focus,
-        blocks: day.blocks,
+        sessions: day.sessions,
         estMinutes: day.estMinutes,
       });
     }
