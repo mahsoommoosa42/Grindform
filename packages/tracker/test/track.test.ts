@@ -6,7 +6,9 @@ import { listLogsForDay } from '@grindform/db';
 
 import {
   getDayProgress,
+  getDayVolume,
   getProgressionSuggestion,
+  getWeekVolume,
   logCompletedSet,
   markSlotComplete,
 } from '../src/track.ts';
@@ -78,6 +80,20 @@ describe('track orchestration', () => {
     const progress = await getDayProgress(db, day);
     expect(progress.percentComplete).toBe(100);
     expect(progress.slots[0]?.topSetLoadKg).toBe(60);
+  });
+
+  it('summarises a day and a week of volume from stored logs', async () => {
+    const slot = makeSlot({ primaryMuscles: ['quads', 'glutes'] });
+    const day = makeDay([slot]);
+    await logCompletedSet(db, { dayId: day.id, slot, setNumber: 1, reps: 5, loadKg: 100 });
+    const dayVol = await getDayVolume(db, day);
+    expect(dayVol.totalKg).toBe(500);
+    expect(dayVol.perMuscle).toEqual([
+      { muscle: 'glutes', kg: 500 },
+      { muscle: 'quads', kg: 500 },
+    ]);
+    const weekVol = await getWeekVolume(db, [day]);
+    expect(weekVol.totalKg).toBe(500);
   });
 
   it('computes a progression suggestion from recent history', async () => {

@@ -14,6 +14,7 @@ import type {
   PublicUser,
   Settings,
   ThemeId,
+  VolumeSummary,
   WeeklyPlan,
 } from './types.ts';
 
@@ -65,9 +66,28 @@ export const completeSlot = (
     body: JSON.stringify(body),
   });
 
-/** Fetch current completion progress for a day. */
-export const getDayProgress = (planId: string, dayId: string): Promise<{ progress: DayProgress }> =>
+/** Log a single set (its own weight + reps), e.g. one row of a pyramid. */
+export const logSet = (body: {
+  dayId: string;
+  slotId: string;
+  exerciseSlug: string;
+  setNumber: number;
+  reps: number;
+  loadKg: number;
+  rpe?: number;
+}): Promise<{ log: unknown }> =>
+  request('/v1/logs', { method: 'POST', body: JSON.stringify(body) });
+
+/** Fetch current completion progress + volume for a day. */
+export const getDayProgress = (
+  planId: string,
+  dayId: string,
+): Promise<{ progress: DayProgress; volume: VolumeSummary }> =>
   request(`/v1/plans/${planId}/days/${dayId}/progress`);
+
+/** Fetch the whole-week volume breakdown (kg per muscle group). */
+export const getWeekVolume = (planId: string): Promise<{ volume: VolumeSummary }> =>
+  request(`/v1/plans/${planId}/volume`);
 
 /** Read persisted settings (theme + preferences). */
 export const getSettings = (): Promise<{ settings: Settings }> => request('/v1/settings');

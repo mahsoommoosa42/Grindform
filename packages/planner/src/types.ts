@@ -20,6 +20,16 @@ import type {
   Weekday,
 } from '@grindform/core';
 
+/**
+ * Superset membership: exercises sharing a `group` are performed
+ * back-to-back. `order` is the 1-based position within the group, which
+ * the UI renders as a label (`A1`, `A2`, …).
+ */
+export interface SupersetRef {
+  readonly group: string;
+  readonly order: number;
+}
+
 /** One exercise prescription inside a session block. */
 export interface ExerciseSlot {
   readonly id: SlotId;
@@ -28,6 +38,12 @@ export interface ExerciseSlot {
   readonly name: string;
   /** Sets/reps/rest for this slot, derived from the goal profile. */
   readonly scheme: RepScheme;
+  /** Denormalised primary muscles, used for volume attribution. */
+  readonly primaryMuscles: readonly MuscleGroup[];
+  /** Whether this slot defaults to a pyramid (weight up, reps down). */
+  readonly pyramid?: boolean;
+  /** Superset grouping, when this slot is paired with another. */
+  readonly superset?: SupersetRef;
   /** Optional coaching cue carried over from the catalog. */
   readonly cue?: string;
 }

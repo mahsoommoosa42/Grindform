@@ -39,6 +39,30 @@ describe('generatePlan — happy path', () => {
     expect(day.id.startsWith('day_')).toBe(true);
   });
 
+  it('flags main lifts as pyramids and denormalises their primary muscles', () => {
+    const plan = expectOk(
+      generatePlan(parse({ goal: 'build_muscle', days: [{ weekday: 'mon', focus: ['glutes'] }] })),
+    );
+    const main = trainingDay(plan).blocks.find((b) => b.type === 'main');
+    expect(main?.slots[0]?.pyramid).toBe(true);
+    expect(main?.slots[0]?.primaryMuscles.length).toBeGreaterThan(0);
+  });
+
+  it('pairs accessories into supersets (A1/A2, B1/B2, …)', () => {
+    const plan = expectOk(
+      generatePlan(
+        parse({ goal: 'build_muscle', days: [{ weekday: 'mon', focus: ['glutes', 'back'] }] }),
+      ),
+    );
+    const accessory = trainingDay(plan).blocks.find((b) => b.type === 'accessory');
+    const slots = accessory?.slots ?? [];
+    expect(slots.length).toBeGreaterThanOrEqual(2);
+    expect(slots[0]?.superset).toEqual({ group: 'A', order: 1 });
+    expect(slots[1]?.superset).toEqual({ group: 'A', order: 2 });
+    // accessories are not pyramided by default
+    expect(slots[0]?.pyramid).toBeUndefined();
+  });
+
   it('carries a coaching cue onto main lift slots that have one', () => {
     const plan = expectOk(
       generatePlan(parse({ goal: 'recomp', days: [{ weekday: 'mon', focus: ['glutes'] }] })),

@@ -10,6 +10,9 @@
     "./formulas": "./src/formulas.ts",
     "./prescribe": "./src/prescribe.ts"
   },
+  "dependencies": {
+    "@grindform/core": "workspace:*"
+  },
   "scripts": {
     "build": "echo 'source-only package; no build step'",
     "test": "vitest run",

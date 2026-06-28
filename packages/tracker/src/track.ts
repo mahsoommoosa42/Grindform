@@ -17,6 +17,8 @@ import { summariseDay } from './progress.ts';
 import type { DayProgress } from './progress.ts';
 import { suggestProgression } from './progression.ts';
 import type { ProgressionOptions, ProgressionSuggestion } from './progression.ts';
+import { summariseDayVolume, summariseWeekVolume } from './volume.ts';
+import type { VolumeSummary } from './volume.ts';
 
 /** Details for logging a single set. */
 export interface LogSetInput {
@@ -80,6 +82,23 @@ export const markSlotComplete = async (
 export const getDayProgress = async (db: DbOrTx, day: PlanDay): Promise<DayProgress> => {
   const logs = await listLogsForDay(db, day.id);
   return summariseDay(day, logs);
+};
+
+/** Load a day's logs and summarise its volume (kg per muscle group). */
+export const getDayVolume = async (db: DbOrTx, day: PlanDay): Promise<VolumeSummary> => {
+  const logs = await listLogsForDay(db, day.id);
+  return summariseDayVolume(day, logs);
+};
+
+/** Load every day's logs and summarise the whole week's volume. */
+export const getWeekVolume = async (
+  db: DbOrTx,
+  days: readonly PlanDay[],
+): Promise<VolumeSummary> => {
+  const entries = await Promise.all(
+    days.map(async (day) => ({ day, logs: await listLogsForDay(db, day.id) })),
+  );
+  return summariseWeekVolume(entries);
 };
 
 /** Number of days of history the progression heuristic looks back over. */

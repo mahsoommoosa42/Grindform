@@ -15,7 +15,14 @@
 import { css, html, LitElement, nothing, svg } from 'lit';
 import type { SVGTemplateResult, TemplateResult } from 'lit';
 
-import { GOAL_PROFILES, prescribeLoad } from '@grindform/loadcalc';
+import {
+  estimateOneRepMax,
+  expandSets,
+  GOAL_PROFILES,
+  loadGoalForGoal,
+  prescribeLoad,
+  profileForGoal,
+} from '@grindform/loadcalc';
 import type { LoadGoal, Prescription } from '@grindform/loadcalc';
 
 import * as api from './api.ts';
@@ -27,12 +34,14 @@ import type {
   DayProgress,
   DaySpecInput,
   Equipment,
+  ExerciseSlot,
   Experience,
   Goal,
   MuscleGroup,
   PlanDay,
   PublicUser,
   ThemeId,
+  VolumeSummary,
   WeeklyPlan,
   Weekday,
 } from './types.ts';
@@ -132,6 +141,97 @@ const titleCase = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1).
 
 const weekdayLabel = (w: Weekday): string => WEEKDAYS.find((d) => d.id === w)?.label ?? w;
 
+/** One editable set row in the tracker (warm-up or working). */
+interface EditableSet {
+  readonly kind: 'warmup' | 'working';
+  /** Target/actual weight in kg; `null` until known. */
+  weight: number | null;
+  /** Target/actual reps; `null` until known. */
+  reps: number | null;
+  /** Local tick for warm-up sets (not logged to the server / volume). */
+  warmupDone: boolean;
+}
+
+/** Per-slot tracker state: the recent set, options, and the set rows. */
+interface SlotUiState {
+  /** Recent best set weight, used to estimate 1RM and prescribe load. */
+  recentWeight: number | null;
+  recentReps: number | null;
+  pyramid: boolean;
+  warmups: number;
+  sets: EditableSet[];
+}
+
+/** Default warm-up sets: a couple for heavy mains, none for accessories. */
+const defaultWarmups = (slot: ExerciseSlot): number => (slot.pyramid === true ? 2 : 0);
+
+/** localStorage key for a remembered recent set, keyed by exercise. */
+const recentKey = (slug: string): string => `gf.recent.${slug}`;
+
+/** Read a remembered recent set for an exercise, if any. */
+const readRecent = (slug: string): { weight: number; reps: number } | null => {
+  try {
+    const raw = globalThis.localStorage?.getItem(recentKey(slug));
+    if (raw === null || raw === undefined) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const { weight, reps } = parsed as Record<string, unknown>;
+    if (typeof weight === 'number' && typeof reps === 'number') return { weight, reps };
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+/** Remember a recent set for an exercise so the prescription pre-fills next time. */
+const writeRecent = (slug: string, weight: number, reps: number): void => {
+  try {
+    globalThis.localStorage?.setItem(recentKey(slug), JSON.stringify({ weight, reps }));
+  } catch {
+    /* storage unavailable (private mode / quota) — non-fatal */
+  }
+};
+
+/**
+ * Build the set rows for a slot: optional warm-ups + working sets, with
+ * weights pre-filled from the recent-set 1RM (when known) and the day's
+ * goal band. Pyramids ramp weight up / reps down across the working sets.
+ */
+const buildSetRows = (
+  slot: ExerciseSlot,
+  goal: Goal,
+  recentWeight: number | null,
+  recentReps: number | null,
+  pyramid: boolean,
+  warmups: number,
+): EditableSet[] => {
+  const hasRecent =
+    recentWeight !== null && recentWeight > 0 && recentReps !== null && recentReps >= 1;
+  const oneRepMax = hasRecent
+    ? estimateOneRepMax({ weight: recentWeight, reps: recentReps })
+    : undefined;
+  const intensity = profileForGoal(loadGoalForGoal(goal)).intensity;
+  const planned = expandSets({
+    workingSets: slot.scheme.sets,
+    repsLow: slot.scheme.repsLow,
+    repsHigh: slot.scheme.repsHigh,
+    intensity,
+    pyramid,
+    warmupSets: warmups,
+    ...(oneRepMax === undefined ? {} : { oneRepMax }),
+  });
+  return planned.map((p) => ({
+    kind: p.kind,
+    weight: p.weightKg ?? null,
+    reps: p.reps,
+    warmupDone: false,
+  }));
+};
+
+/** The working set rows of a slot, in order (warm-ups excluded). */
+const workingRows = (state: SlotUiState): EditableSet[] =>
+  state.sets.filter((s) => s.kind === 'working');
+
 /** The whole Grindform UI. */
 export class GfApp extends LitElement {
   static override properties = {
@@ -162,6 +262,9 @@ export class GfApp extends LitElement {
     plan: { state: true },
     selectedDayId: { state: true },
     progress: { state: true },
+    dayVolume: { state: true },
+    weekVolume: { state: true },
+    slotState: { state: true },
     busy: { state: true },
     error: { state: true },
     calcExercise: { state: true },
@@ -197,6 +300,12 @@ export class GfApp extends LitElement {
   declare plan: WeeklyPlan | null;
   declare selectedDayId: string | null;
   declare progress: Record<string, DayProgress>;
+  /** Per-day volume summaries, keyed by day id. */
+  declare dayVolume: Record<string, VolumeSummary>;
+  /** Whole-week volume summary for the current plan. */
+  declare weekVolume: VolumeSummary | null;
+  /** Per-slot tracker state (recent set, options, set rows), keyed by slot id. */
+  declare slotState: Record<string, SlotUiState>;
   declare busy: boolean;
   declare error: string | null;
   /** Load-calculator inputs (client-side only; never persisted). */
@@ -204,9 +313,6 @@ export class GfApp extends LitElement {
   declare calcWeight: number;
   declare calcReps: number;
   declare calcGoal: LoadGoal;
-
-  /** Transient per-slot tracker inputs; not reactive (read on submit). */
-  private slotInputs: Record<string, { loadKg?: number; reps?: number }> = {};
 
   constructor() {
     super();
@@ -237,6 +343,9 @@ export class GfApp extends LitElement {
     this.plan = null;
     this.selectedDayId = null;
     this.progress = {};
+    this.dayVolume = {};
+    this.weekVolume = null;
+    this.slotState = {};
     this.busy = false;
     this.error = null;
     this.calcExercise = '';
@@ -323,6 +432,9 @@ export class GfApp extends LitElement {
     this.user = null;
     this.plan = null;
     this.progress = {};
+    this.dayVolume = {};
+    this.weekVolume = null;
+    this.slotState = {};
     this.selectedDayId = null;
     this.accountMenuOpen = false;
     this.adminUsers = null;
@@ -486,6 +598,9 @@ export class GfApp extends LitElement {
       });
       this.plan = plan;
       this.progress = {};
+      this.dayVolume = {};
+      this.weekVolume = null;
+      this.slotState = {};
       this.selectedDayId = null;
       this.view = 'week';
     } catch (err) {
@@ -495,8 +610,38 @@ export class GfApp extends LitElement {
     }
   }
 
+  /** Seed per-slot tracker state for a day (recent set, options, set rows). */
+  private initSlotState(day: PlanDay): void {
+    const next: Record<string, SlotUiState> = { ...this.slotState };
+    for (const block of day.blocks) {
+      for (const slot of block.slots) {
+        if (next[slot.id] !== undefined) continue;
+        const recent = readRecent(slot.exerciseSlug);
+        const pyramid = slot.pyramid ?? false;
+        const warmups = defaultWarmups(slot);
+        const recentWeight = recent?.weight ?? null;
+        const recentReps = recent?.reps ?? null;
+        next[slot.id] = {
+          recentWeight,
+          recentReps,
+          pyramid,
+          warmups,
+          sets: buildSetRows(slot, this.goalForDay(), recentWeight, recentReps, pyramid, warmups),
+        };
+      }
+    }
+    this.slotState = next;
+  }
+
+  /** The current plan's goal, defaulting to the form goal before a plan exists. */
+  private goalForDay(): Goal {
+    return this.plan?.goal ?? this.goal;
+  }
+
   private openTracker(dayId: string): void {
     this.selectedDayId = dayId;
+    const day = this.plan?.days.find((d) => d.id === dayId);
+    if (day !== undefined) this.initSlotState(day);
     void this.refreshProgress(dayId);
   }
 
@@ -507,30 +652,115 @@ export class GfApp extends LitElement {
   private async refreshProgress(dayId: string): Promise<void> {
     if (this.plan === null) return;
     try {
-      const { progress } = await api.getDayProgress(this.plan.id, dayId);
+      const { progress, volume } = await api.getDayProgress(this.plan.id, dayId);
       this.progress = { ...this.progress, [dayId]: progress };
+      this.dayVolume = { ...this.dayVolume, [dayId]: volume };
     } catch {
       /* leave previous progress in place */
     }
+    void this.refreshWeekVolume();
   }
 
-  private onSlotInput(slotId: string, field: 'loadKg' | 'reps', value: string): void {
-    const current = this.slotInputs[slotId] ?? {};
-    const parsed = value === '' ? undefined : Number(value);
-    this.slotInputs = { ...this.slotInputs, [slotId]: { ...current, [field]: parsed } };
-  }
-
-  private async onCompleteSlot(dayId: string, slotId: string): Promise<void> {
+  private async refreshWeekVolume(): Promise<void> {
     if (this.plan === null) return;
-    const input = this.slotInputs[slotId] ?? {};
+    try {
+      const { volume } = await api.getWeekVolume(this.plan.id);
+      this.weekVolume = volume;
+    } catch {
+      /* leave previous week volume in place */
+    }
+  }
+
+  /** Recompute a slot's set rows after its recent set / options change. */
+  private rebuildSlot(slot: ExerciseSlot, mutate: (s: SlotUiState) => void): void {
+    const current = this.slotState[slot.id];
+    if (current === undefined) return;
+    const next: SlotUiState = {
+      ...current,
+      sets: current.sets.map((s) => ({ ...s })),
+    };
+    mutate(next);
+    next.sets = buildSetRows(
+      slot,
+      this.goalForDay(),
+      next.recentWeight,
+      next.recentReps,
+      next.pyramid,
+      next.warmups,
+    );
+    this.slotState = { ...this.slotState, [slot.id]: next };
+  }
+
+  private onRecentInput(
+    slot: ExerciseSlot,
+    field: 'recentWeight' | 'recentReps',
+    raw: string,
+  ): void {
+    const value = raw === '' ? null : Number(raw);
+    this.rebuildSlot(slot, (s) => {
+      s[field] = value;
+    });
+  }
+
+  private onTogglePyramid(slot: ExerciseSlot, on: boolean): void {
+    this.rebuildSlot(slot, (s) => {
+      s.pyramid = on;
+    });
+  }
+
+  private onWarmupCount(slot: ExerciseSlot, count: number): void {
+    const clamped = Math.max(0, Math.min(4, count));
+    this.rebuildSlot(slot, (s) => {
+      s.warmups = clamped;
+    });
+  }
+
+  /** Edit one set row's weight or reps in place (no rebuild). */
+  private onSetInput(slotId: string, index: number, field: 'weight' | 'reps', raw: string): void {
+    const current = this.slotState[slotId];
+    if (current === undefined) return;
+    const value = raw === '' ? null : Number(raw);
+    const sets = current.sets.map((s, i) => (i === index ? { ...s, [field]: value } : s));
+    this.slotState = { ...this.slotState, [slotId]: { ...current, sets } };
+  }
+
+  /** Toggle a warm-up row's local "done" tick (warm-ups aren't logged). */
+  private onToggleWarmup(slotId: string, index: number): void {
+    const current = this.slotState[slotId];
+    if (current === undefined) return;
+    const sets = current.sets.map((s, i) =>
+      i === index ? { ...s, warmupDone: !s.warmupDone } : s,
+    );
+    this.slotState = { ...this.slotState, [slotId]: { ...current, sets } };
+  }
+
+  /**
+   * Log the next outstanding working set of a slot, using that row's
+   * weight + reps. Working sets are logged in order; the server's
+   * `setsLogged` count drives which rows show as done.
+   */
+  private async onLogSet(dayId: string, slot: ExerciseSlot, workingIndex: number): Promise<void> {
+    if (this.plan === null) return;
+    const state = this.slotState[slot.id];
+    if (state === undefined) return;
+    const row = workingRows(state)[workingIndex];
+    if (row === undefined) return;
+    const loadKg = row.weight ?? 0;
+    const reps = row.reps ?? slot.scheme.repsHigh;
     this.busy = true;
     this.error = null;
     try {
-      const { progress } = await api.completeSlot(this.plan.id, dayId, slotId, {
-        loadKg: input.loadKg ?? 0,
-        ...(input.reps === undefined ? {} : { reps: input.reps }),
+      await api.logSet({
+        dayId,
+        slotId: slot.id,
+        exerciseSlug: slot.exerciseSlug,
+        setNumber: workingIndex + 1,
+        reps,
+        loadKg,
       });
-      this.progress = { ...this.progress, [dayId]: progress };
+      // Remember the heaviest working set as the "recent set" for next time.
+      if (loadKg > 0) writeRecent(slot.exerciseSlug, loadKg, reps);
+      await this.refreshProgress(dayId);
     } catch (err) {
       this.error = err instanceof ApiError ? err.message : 'Could not save that set.';
     } finally {
@@ -1204,7 +1434,35 @@ export class GfApp extends LitElement {
           </button>
         </div>
         <div class="week-grid">${plan.days.map((d) => this.renderDayCard(d))}</div>
+        ${this.renderVolumeCard('Week volume', this.weekVolume, 'week-volume')}
       </section>
+    `;
+  }
+
+  /** A "kg per muscle group" reference card for a day or the week. */
+  private renderVolumeCard(
+    title: string,
+    volume: VolumeSummary | null | undefined,
+    testid: string,
+  ): TemplateResult {
+    if (volume === undefined || volume === null || volume.totalKg === 0) return html`${nothing}`;
+    return html`
+      <div class="volume" data-testid=${testid}>
+        <h3>${title}</h3>
+        <p class="volume-total">
+          <strong data-testid=${`${testid}-total`}>${volume.totalKg.toLocaleString()} kg</strong>
+          total moved
+        </p>
+        <ul class="volume-list">
+          ${volume.perMuscle.map(
+            (m) =>
+              html`<li>
+                <span class="vm-name">${titleCase(m.muscle)}</span>
+                <span class="vm-kg">${m.kg.toLocaleString()} kg</span>
+              </li>`,
+          )}
+        </ul>
+      </div>
     `;
   }
 
@@ -1265,6 +1523,8 @@ export class GfApp extends LitElement {
                 <p class="pct" data-testid="tracker-pct">${prog.percentComplete}% complete</p>`
             : nothing}
           <div class="track-list">${day.blocks.map((b) => this.renderTrackBlock(day.id, b))}</div>
+          ${this.renderVolumeCard('Today’s volume', this.dayVolume[day.id], 'day-volume')}
+          ${this.renderVolumeCard('Week volume so far', this.weekVolume, 'tracker-week-volume')}
         </div>
       </div>
     `;
@@ -1277,54 +1537,164 @@ export class GfApp extends LitElement {
         ${block.note !== undefined ? html`<p class="note">${block.note}</p>` : nothing}
       </div>`;
     }
-    const prog = this.progress[dayId];
     return html`
       <div class="track-block">
         <h3>${block.title}</h3>
-        ${block.slots.map((slot) => {
-          const sp = prog?.slots.find((s) => s.slotId === slot.id);
-          const done = sp?.complete ?? false;
-          return html`
-            <div class=${done ? 'slot done' : 'slot'} data-testid=${`slot-${slot.id}`}>
-              <div class="slot-name">
-                <strong>${slot.name}</strong>
-                <small
-                  >${slot.scheme.sets}×${slot.scheme.repsLow}-${slot.scheme.repsHigh}${slot.scheme
-                    .perSide
-                    ? '/side'
-                    : ''}</small
-                >
-              </div>
-              <div class="slot-inputs">
-                <input
-                  type="number"
-                  inputmode="decimal"
-                  placeholder="kg"
-                  data-testid=${`load-${slot.id}`}
-                  @input=${(e: Event) =>
-                    this.onSlotInput(slot.id, 'loadKg', (e.target as HTMLInputElement).value)}
-                />
-                <input
-                  type="number"
-                  inputmode="numeric"
-                  placeholder="reps"
-                  data-testid=${`reps-${slot.id}`}
-                  @input=${(e: Event) =>
-                    this.onSlotInput(slot.id, 'reps', (e.target as HTMLInputElement).value)}
-                />
-                <button
-                  class="done-btn"
-                  data-testid=${`complete-${slot.id}`}
-                  ?disabled=${this.busy}
-                  @click=${() => void this.onCompleteSlot(dayId, slot.id)}
-                >
-                  ${done ? 'Done ✓' : 'Mark done'}
-                </button>
-              </div>
-            </div>
-          `;
-        })}
+        ${block.slots.map((slot) => this.renderTrackSlot(dayId, slot))}
       </div>
+    `;
+  }
+
+  /** One exercise in the tracker: recent set, options, and per-set rows. */
+  private renderTrackSlot(dayId: string, slot: ExerciseSlot): TemplateResult {
+    const state = this.slotState[slot.id];
+    if (state === undefined) return html`${nothing}`;
+    const sp = this.progress[dayId]?.slots.find((s) => s.slotId === slot.id);
+    const loggedWorking = sp?.setsLogged ?? 0;
+    const done = sp?.complete ?? false;
+    const ss = slot.superset;
+    let workingSeen = -1;
+    return html`
+      <div class=${done ? 'slot done' : 'slot'} data-testid=${`slot-${slot.id}`}>
+        <div class="slot-name">
+          <strong>${slot.name}</strong>
+          ${ss !== undefined
+            ? html`<span class="superset" data-testid=${`superset-${slot.id}`}
+                >Superset ${ss.group}${ss.order} · back-to-back</span
+              >`
+            : nothing}
+          <small
+            >${slot.scheme.sets}×${slot.scheme.repsLow}-${slot.scheme.repsHigh}${slot.scheme.perSide
+              ? '/side'
+              : ''}</small
+          >
+        </div>
+
+        <div class="slot-recent">
+          <label
+            >Recent set
+            <input
+              type="number"
+              inputmode="decimal"
+              placeholder="kg"
+              .value=${state.recentWeight === null ? '' : String(state.recentWeight)}
+              data-testid=${`recent-weight-${slot.id}`}
+              @input=${(e: Event) =>
+                this.onRecentInput(slot, 'recentWeight', (e.target as HTMLInputElement).value)}
+          /></label>
+          <span class="times">×</span>
+          <label
+            ><span class="sr-only">recent reps</span>
+            <input
+              type="number"
+              inputmode="numeric"
+              placeholder="reps"
+              .value=${state.recentReps === null ? '' : String(state.recentReps)}
+              data-testid=${`recent-reps-${slot.id}`}
+              @input=${(e: Event) =>
+                this.onRecentInput(slot, 'recentReps', (e.target as HTMLInputElement).value)}
+          /></label>
+          ${this.renderEstimate(state)}
+        </div>
+
+        <div class="slot-opts">
+          <label class="opt"
+            ><input
+              type="checkbox"
+              ?checked=${state.pyramid}
+              data-testid=${`pyramid-${slot.id}`}
+              @change=${(e: Event) =>
+                this.onTogglePyramid(slot, (e.target as HTMLInputElement).checked)}
+            />Pyramid</label
+          >
+          <label class="opt"
+            >Warm-ups
+            <input
+              type="number"
+              inputmode="numeric"
+              min="0"
+              max="4"
+              .value=${String(state.warmups)}
+              data-testid=${`warmups-${slot.id}`}
+              @input=${(e: Event) =>
+                this.onWarmupCount(slot, Number((e.target as HTMLInputElement).value))}
+          /></label>
+        </div>
+
+        <ol class="set-rows">
+          ${state.sets.map((row, index) => {
+            if (row.kind === 'working') workingSeen += 1;
+            const workingIndex = workingSeen;
+            return this.renderSetRow(dayId, slot, row, index, workingIndex, loggedWorking);
+          })}
+        </ol>
+      </div>
+    `;
+  }
+
+  /** A short "1RM ≈ … → … kg" estimate line for the prescribed working load. */
+  private renderEstimate(state: SlotUiState): TemplateResult {
+    if (state.recentWeight === null || state.recentReps === null) return html`${nothing}`;
+    if (state.recentWeight <= 0 || state.recentReps < 1) return html`${nothing}`;
+    const orm = Math.round(
+      estimateOneRepMax({ weight: state.recentWeight, reps: state.recentReps }),
+    );
+    return html`<small class="estimate">1RM ≈ ${orm} kg</small>`;
+  }
+
+  private renderSetRow(
+    dayId: string,
+    slot: ExerciseSlot,
+    row: EditableSet,
+    index: number,
+    workingIndex: number,
+    loggedWorking: number,
+  ): TemplateResult {
+    const isWarmup = row.kind === 'warmup';
+    const logged = !isWarmup && workingIndex < loggedWorking;
+    const isNext = !isWarmup && workingIndex === loggedWorking;
+    const label = isWarmup ? 'W' : `Set ${workingIndex + 1}`;
+    return html`
+      <li class=${logged || (isWarmup && row.warmupDone) ? 'set-row done' : 'set-row'}>
+        <span class="set-label ${isWarmup ? 'warmup' : ''}">${label}</span>
+        <input
+          type="number"
+          inputmode="decimal"
+          placeholder="kg"
+          ?disabled=${logged}
+          .value=${row.weight === null ? '' : String(row.weight)}
+          data-testid=${`set-weight-${slot.id}-${index}`}
+          @input=${(e: Event) =>
+            this.onSetInput(slot.id, index, 'weight', (e.target as HTMLInputElement).value)}
+        />
+        <span class="times">×</span>
+        <input
+          type="number"
+          inputmode="numeric"
+          placeholder="reps"
+          ?disabled=${logged}
+          .value=${row.reps === null ? '' : String(row.reps)}
+          data-testid=${`set-reps-${slot.id}-${index}`}
+          @input=${(e: Event) =>
+            this.onSetInput(slot.id, index, 'reps', (e.target as HTMLInputElement).value)}
+        />
+        ${isWarmup
+          ? html`<button
+              class=${row.warmupDone ? 'done-btn on' : 'done-btn'}
+              data-testid=${`warmup-done-${slot.id}-${index}`}
+              @click=${() => this.onToggleWarmup(slot.id, index)}
+            >
+              ${row.warmupDone ? '✓' : 'Ready'}
+            </button>`
+          : html`<button
+              class="done-btn"
+              data-testid=${`log-set-${slot.id}-${workingIndex}`}
+              ?disabled=${this.busy || logged || !isNext}
+              @click=${() => void this.onLogSet(dayId, slot, workingIndex)}
+            >
+              ${logged ? 'Done ✓' : 'Log'}
+            </button>`}
+      </li>
     `;
   }
 
@@ -1439,7 +1809,9 @@ export class GfApp extends LitElement {
     .field select:focus-visible,
     .field input:focus-visible,
     .day-head select:focus-visible,
-    .slot-inputs input:focus-visible {
+    .slot-recent input:focus-visible,
+    .slot-opts input:focus-visible,
+    .set-row input:focus-visible {
       outline: none;
       border-color: var(--gf-accent);
       box-shadow: 0 0 0 3px var(--gf-ring);
@@ -1621,16 +1993,9 @@ export class GfApp extends LitElement {
       .content {
         padding-bottom: calc(84px + env(safe-area-inset-bottom));
       }
-      /* Stack each tracker slot so the inputs + done button never overflow
-         the sheet width on short exercise names. */
-      .slot {
-        flex-direction: column;
-        align-items: stretch;
-      }
-      .slot-inputs {
-        width: 100%;
-      }
-      .slot-inputs input {
+      /* Let set-row inputs flex to fill the sheet width on phones so the
+         log button is never pushed off the right edge. */
+      .set-row input {
         flex: 1 1 0;
         width: auto;
         min-width: 0;
@@ -1903,14 +2268,12 @@ export class GfApp extends LitElement {
     }
     .slot {
       display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      padding: 10px;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px;
       border: 1px solid var(--gf-border);
       border-radius: var(--gf-radius);
-      margin-bottom: 8px;
+      margin-bottom: 10px;
     }
     .slot.done {
       border-color: var(--gf-success);
@@ -1919,16 +2282,117 @@ export class GfApp extends LitElement {
     .slot-name {
       display: flex;
       flex-direction: column;
+      gap: 2px;
     }
     .slot-name small {
       color: var(--gf-muted);
     }
-    .slot-inputs {
-      display: flex;
-      gap: 6px;
-      align-items: center;
+    .superset {
+      align-self: flex-start;
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--gf-accent);
+      background: var(--gf-accent-soft);
+      border-radius: 999px;
+      padding: 2px 8px;
     }
-    .slot-inputs input {
+    .slot-recent,
+    .slot-opts {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: var(--gf-text-soft);
+    }
+    .slot-recent label,
+    .slot-opts label.opt {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .slot-opts .opt input[type='checkbox'] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--gf-accent);
+    }
+    .estimate {
+      color: var(--gf-muted);
+      font-weight: 600;
+    }
+    .times {
+      color: var(--gf-muted);
+    }
+    .set-rows {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .set-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .set-row.done {
+      opacity: 0.7;
+    }
+    .set-label {
+      flex: 0 0 auto;
+      min-width: 44px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--gf-muted);
+    }
+    .set-label.warmup {
+      color: var(--gf-accent-2);
+    }
+    .set-row .done-btn {
+      margin-left: auto;
+    }
+    .volume {
+      border: 1px solid var(--gf-border);
+      border-radius: var(--gf-radius);
+      padding: 12px 14px;
+      margin-top: 12px;
+      background: var(--gf-surface-2);
+    }
+    .volume h3 {
+      margin: 0 0 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--gf-muted);
+    }
+    .volume-total {
+      margin: 0 0 8px;
+      color: var(--gf-text-soft);
+    }
+    .volume-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .volume-list li {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.9rem;
+    }
+    .vm-kg {
+      font-weight: 700;
+      color: var(--gf-text);
+    }
+    .slot-recent input,
+    .slot-opts input,
+    .set-row input {
       width: 72px;
       font: inherit;
       color: var(--gf-text);
@@ -1940,6 +2404,9 @@ export class GfApp extends LitElement {
       transition:
         border-color var(--gf-speed) var(--gf-ease),
         box-shadow var(--gf-speed) var(--gf-ease);
+    }
+    .slot-opts input[type='number'] {
+      width: 56px;
     }
     .done-btn {
       appearance: none;

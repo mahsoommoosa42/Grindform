@@ -200,6 +200,9 @@ describe('Grindform API', () => {
 
       const progress = await client.request(`/v1/plans/${plan.id}/days/${dayId}/progress`);
       expect(progress.status).toBe(200);
+      const progressBody = (await progress.json()) as { volume: { totalKg: number } };
+      // 8 reps × 60 kg over the slot's prescribed sets → positive tonnage.
+      expect(progressBody.volume.totalKg).toBeGreaterThan(0);
     });
 
     it('marks a slot complete with only loadKg (defaults applied)', async () => {
@@ -254,6 +257,37 @@ describe('Grindform API', () => {
       const plan = await createSamplePlan(client);
       const res = await client.request(`/v1/plans/${plan.id}/days/nope/progress`);
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe('GET /v1/plans/:planId/volume', () => {
+    it('reports the whole-week volume after logging sets', async () => {
+      const plan = await createSamplePlan(client);
+      const dayId = plan.days[0]?.id ?? '';
+      const slotId = firstSlotId(plan);
+      await client.json(`/v1/plans/${plan.id}/days/${dayId}/slots/${slotId}/complete`, 'POST', {
+        loadKg: 80,
+        reps: 5,
+      });
+      const res = await client.request(`/v1/plans/${plan.id}/volume`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        volume: { totalKg: number; perMuscle: { muscle: string; kg: number }[] };
+      };
+      expect(body.volume.totalKg).toBeGreaterThan(0);
+      expect(body.volume.perMuscle.length).toBeGreaterThan(0);
+    });
+
+    it('returns 404 week volume for an unknown plan', async () => {
+      const res = await client.request(`/v1/plans/pln_${'0'.repeat(26)}/volume`);
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 404 week volume for another user's plan", async () => {
+      const plan = await createSamplePlan(client);
+      const other = await registerClient(app, 'volume-other@example.com');
+      const res = await other.request(`/v1/plans/${plan.id}/volume`);
+      expect(res.status).toBe(404);
     });
   });
 

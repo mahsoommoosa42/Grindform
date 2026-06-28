@@ -44,8 +44,36 @@ const COOLDOWN_NOTE = 'Easy walk to bring the heart rate down, then static stret
 /** Build one exercise slot, carrying the cue across when present. */
 const makeSlot = (profile: GoalProfile, e: Exercise, role: ExerciseRole): ExerciseSlot => {
   const scheme = schemeForRole(profile, role, e.unilateral);
-  const base = { id: newSlotId(), exerciseSlug: e.slug, name: e.name, scheme };
+  const base = {
+    id: newSlotId(),
+    exerciseSlug: e.slug,
+    name: e.name,
+    scheme,
+    primaryMuscles: e.primaryMuscles,
+    // Main lifts default to a pyramid (weight up, reps down); the lifter
+    // can switch back to straight sets in the tracker.
+    ...(role === 'main' ? { pyramid: true } : {}),
+  };
   return e.cue === undefined ? base : { ...base, cue: e.cue };
+};
+
+/** Group labels for supersets, in assignment order. */
+const SUPERSET_GROUPS = 'ABCDEFGH';
+
+/**
+ * Pair consecutive accessory slots into supersets (A1/A2, B1/B2, …).
+ * A trailing odd slot is left on its own (no superset ref).
+ */
+const assignSupersets = (slots: readonly ExerciseSlot[]): ExerciseSlot[] => {
+  const pairCount = Math.floor(slots.length / 2);
+  return slots.map((slot, i) => {
+    const pairIndex = Math.floor(i / 2);
+    if (pairIndex >= pairCount) return slot;
+    return {
+      ...slot,
+      superset: { group: SUPERSET_GROUPS[pairIndex] as string, order: (i % 2) + 1 },
+    };
+  });
 };
 
 /**
@@ -203,7 +231,10 @@ const buildTrainingDay = (
     rng,
   );
   const finisher = selectConditioning(profile, input, used, rng);
-  const accessoryAndFinisher = finisher === undefined ? accessories : [...accessories, finisher];
+  // Pair the accessories into supersets; the conditioning finisher (if any)
+  // is performed on its own, so it stays outside the grouping.
+  const supersetted = assignSupersets(accessories);
+  const accessoryAndFinisher = finisher === undefined ? supersetted : [...supersetted, finisher];
 
   if (mains.length === 0 && accessoryAndFinisher.length === 0) {
     return err(

@@ -5,7 +5,7 @@
  * its output types.
  */
 
-export type { ExerciseSlot, PlanDay, SessionBlock, WeeklyPlan } from './types.ts';
+export type { ExerciseSlot, PlanDay, SessionBlock, SupersetRef, WeeklyPlan } from './types.ts';
 export { generatePlan } from './generate.ts';
 export { estimateSlotMinutes, GOAL_PROFILES, schemeForRole, templateForRole } from './profiles.ts';
 export type { GoalProfile } from './profiles.ts';

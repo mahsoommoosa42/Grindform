@@ -49,11 +49,20 @@ export interface TimeBudget {
   readonly physioMinutes: number;
 }
 
+/** Superset membership; slots sharing a `group` are done back-to-back. */
+export interface SupersetRef {
+  readonly group: string;
+  readonly order: number;
+}
+
 export interface ExerciseSlot {
   readonly id: string;
   readonly exerciseSlug: string;
   readonly name: string;
   readonly scheme: RepScheme;
+  readonly primaryMuscles: readonly MuscleGroup[];
+  readonly pyramid?: boolean;
+  readonly superset?: SupersetRef;
   readonly cue?: string;
 }
 
@@ -99,6 +108,18 @@ export interface DayProgress {
   readonly completeSlots: number;
   readonly percentComplete: number;
   readonly slots: readonly SlotProgress[];
+}
+
+/** Kilograms moved for one muscle group. */
+export interface MuscleVolume {
+  readonly muscle: MuscleGroup;
+  readonly kg: number;
+}
+
+/** Tonnage summary for a day or a whole week. */
+export interface VolumeSummary {
+  readonly totalKg: number;
+  readonly perMuscle: readonly MuscleVolume[];
 }
 
 export interface Settings {

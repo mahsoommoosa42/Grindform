@@ -4,8 +4,19 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { GOAL_PROFILES, prescribeLoad, profileForGoal } from '../src/prescribe.ts';
+import { GOAL_PROFILES, loadGoalForGoal, prescribeLoad, profileForGoal } from '../src/prescribe.ts';
 import type { LoadGoal } from '../src/prescribe.ts';
+
+describe('loadGoalForGoal', () => {
+  it.each([
+    ['build_muscle', 'hypertrophy'],
+    ['lose_fat', 'hypertrophy'],
+    ['recomp', 'hypertrophy'],
+    ['build_endurance', 'endurance'],
+  ] as const)('maps %s to the %s band', (goal, expected) => {
+    expect(loadGoalForGoal(goal)).toBe(expected);
+  });
+});
 
 describe('profileForGoal', () => {
   it.each(GOAL_PROFILES.map((p) => p.goal))('returns the profile for %s', (goal) => {

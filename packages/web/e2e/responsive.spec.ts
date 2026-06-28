@@ -73,7 +73,7 @@ test('tracker action buttons stay within the viewport width', async ({ page }) =
   await expect(page.getByTestId('tracker')).toBeVisible();
   const slot = page.locator('[data-testid^="slot-"]').first();
   const id = ((await slot.getAttribute('data-testid')) as string).replace('slot-', '');
-  await expectWithinViewport(page, page.getByTestId(`complete-${id}`));
+  await expectWithinViewport(page, page.getByTestId(`log-set-${id}-0`));
 });
 
 test('tap targets are at least 44px tall on touch devices', async ({ page }) => {

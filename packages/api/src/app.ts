@@ -44,7 +44,13 @@ import {
 import type { Db, Settings } from '@grindform/db';
 import { generatePlan } from '@grindform/planner';
 import type { ExerciseSlot, PlanDay, WeeklyPlan } from '@grindform/planner';
-import { getDayProgress, logCompletedSet, markSlotComplete } from '@grindform/tracker';
+import {
+  getDayProgress,
+  getDayVolume,
+  getWeekVolume,
+  logCompletedSet,
+  markSlotComplete,
+} from '@grindform/tracker';
 
 import { registerAdminRoutes } from './admin-routes.ts';
 import { registerAuthRoutes } from './auth-routes.ts';
@@ -209,7 +215,17 @@ export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
       c.req.param('planId'),
       c.req.param('dayId'),
     );
-    return c.json({ progress: await getDayProgress(db, day) });
+    return c.json({ progress: await getDayProgress(db, day), volume: await getDayVolume(db, day) });
+  });
+
+  app.get('/v1/plans/:planId/volume', guard, async (c) => {
+    const planId = parseOrThrow(PlanIdParamSchema, c.req.param('planId'), 'plan id');
+    const plan = await getPlan(db, planId);
+    if (plan === undefined) throw new NotFoundError('plan not found', { planId });
+    if (!(await planBelongsToUser(db, planId, c.get('auth').userId))) {
+      throw new NotFoundError('plan not found', { planId });
+    }
+    return c.json({ volume: await getWeekVolume(db, plan.days) });
   });
 
   app.post('/v1/plans/:planId/days/:dayId/slots/:slotId/complete', guard, async (c) => {
@@ -244,6 +260,7 @@ export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
         id: body.slotId,
         exerciseSlug: body.exerciseSlug,
         name: body.exerciseSlug,
+        primaryMuscles: [],
         scheme: {
           sets: 1,
           repsLow: body.reps,

@@ -17,6 +17,7 @@ export const makeSlot = (over: Partial<ExerciseSlot> = {}): ExerciseSlot => ({
   exerciseSlug: parseExerciseSlug('back-squat'),
   name: 'Back squat',
   scheme: SCHEME,
+  primaryMuscles: ['quads'],
   ...over,
 });
 

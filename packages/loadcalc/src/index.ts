@@ -7,5 +7,7 @@
 
 export { estimateOneRepMax, roundToIncrement } from './formulas.ts';
 export type { RepMaxInput } from './formulas.ts';
-export { GOAL_PROFILES, prescribeLoad, profileForGoal } from './prescribe.ts';
+export { GOAL_PROFILES, loadGoalForGoal, prescribeLoad, profileForGoal } from './prescribe.ts';
 export type { GoalProfile, LoadGoal, PrescribeInput, Prescription } from './prescribe.ts';
+export { expandSets } from './sets.ts';
+export type { ExpandSetsInput, PlannedSet, SetKind } from './sets.ts';

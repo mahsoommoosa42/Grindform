@@ -6,11 +6,23 @@
  * intensity bands.
  */
 
+import type { Goal } from '@grindform/core';
+
 import { estimateOneRepMax, roundToIncrement } from './formulas.ts';
 import type { RepMaxInput } from './formulas.ts';
 
 /** What the lifter is training for; drives the intensity band. */
 export type LoadGoal = 'strength' | 'hypertrophy' | 'endurance';
+
+/**
+ * Map a weekly-plan {@link Goal} to the load {@link LoadGoal} whose
+ * intensity band best fits it. Muscle/recomp/fat-loss all train in the
+ * hypertrophy band; only an explicit endurance goal drops to the light,
+ * high-rep band. (Pure strength is offered only in the standalone
+ * calculator, never auto-selected from a weekly goal.)
+ */
+export const loadGoalForGoal = (goal: Goal): LoadGoal =>
+  goal === 'build_endurance' ? 'endurance' : 'hypertrophy';
 
 /** The intensity/rep/set band for a goal. */
 export interface GoalProfile {
