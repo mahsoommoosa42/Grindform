@@ -6,7 +6,16 @@
  * `{ code, message }` envelope, so UI code can surface a useful message.
  */
 
-import type { DayProgress, GeneratePlanRequest, Settings, ThemeId, WeeklyPlan } from './types.ts';
+import type {
+  AdminUserRow,
+  AuditRow,
+  DayProgress,
+  GeneratePlanRequest,
+  PublicUser,
+  Settings,
+  ThemeId,
+  WeeklyPlan,
+} from './types.ts';
 
 /** An error raised when the API responds with a non-2xx status. */
 export class ApiError extends Error {
@@ -66,3 +75,46 @@ export const getSettings = (): Promise<{ settings: Settings }> => request('/v1/s
 /** Persist the chosen theme. */
 export const saveTheme = (theme: ThemeId): Promise<{ settings: Settings }> =>
   request('/v1/settings', { method: 'PATCH', body: JSON.stringify({ theme }) });
+
+/** The current session's user, or `null` when not signed in. */
+export const me = (): Promise<{ user: PublicUser | null }> => request('/v1/auth/me');
+
+/** Create an account (with consent) and start a session. */
+export const register = (input: {
+  email: string;
+  password: string;
+  acceptTerms: boolean;
+}): Promise<{ user: PublicUser }> =>
+  request('/v1/auth/register', { method: 'POST', body: JSON.stringify(input) });
+
+/** Sign in with email + password and start a session. */
+export const login = (input: { email: string; password: string }): Promise<{ user: PublicUser }> =>
+  request('/v1/auth/login', { method: 'POST', body: JSON.stringify(input) });
+
+/** End the current session. */
+export const logout = (): Promise<void> => request('/v1/auth/logout', { method: 'POST' });
+
+/** Download a full JSON export of the current account's data (GDPR). */
+export const exportAccount = (): Promise<unknown> => request('/v1/account/export');
+
+/** Permanently erase the current account and all its data (GDPR). */
+export const deleteAccount = (): Promise<void> => request('/v1/account', { method: 'DELETE' });
+
+/** Admin: list every account with a plan count. */
+export const adminListUsers = (): Promise<{ users: AdminUserRow[] }> => request('/v1/admin/users');
+
+/** Admin: fetch one account with its audit trail. */
+export const adminGetUser = (id: string): Promise<{ user: PublicUser; audit: AuditRow[] }> =>
+  request(`/v1/admin/users/${id}`);
+
+/** Admin: disable an account (revokes its sessions). */
+export const adminDisableUser = (id: string): Promise<{ user: PublicUser }> =>
+  request(`/v1/admin/users/${id}/disable`, { method: 'POST' });
+
+/** Admin: re-enable a disabled account. */
+export const adminEnableUser = (id: string): Promise<{ user: PublicUser }> =>
+  request(`/v1/admin/users/${id}/enable`, { method: 'POST' });
+
+/** Admin: permanently erase an account. */
+export const adminDeleteUser = (id: string): Promise<void> =>
+  request(`/v1/admin/users/${id}`, { method: 'DELETE' });

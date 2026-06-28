@@ -18,6 +18,8 @@ import type { TemplateResult } from 'lit';
 import * as api from './api.ts';
 import { ApiError } from './api.ts';
 import type {
+  AdminUserRow,
+  AuditRow,
   DayActivity,
   DayProgress,
   DaySpecInput,
@@ -26,6 +28,7 @@ import type {
   Goal,
   MuscleGroup,
   PlanDay,
+  PublicUser,
   ThemeId,
   WeeklyPlan,
   Weekday,
@@ -108,6 +111,19 @@ const weekdayLabel = (w: Weekday): string => WEEKDAYS.find((d) => d.id === w)?.l
 /** The whole Grindform UI. */
 export class GfApp extends LitElement {
   static override properties = {
+    authStatus: { state: true },
+    user: { state: true },
+    authMode: { state: true },
+    authEmail: { state: true },
+    authPassword: { state: true },
+    authConsent: { state: true },
+    authError: { state: true },
+    authBusy: { state: true },
+    accountMenuOpen: { state: true },
+    showPrivacy: { state: true },
+    adminUsers: { state: true },
+    adminDetail: { state: true },
+    adminError: { state: true },
     theme: { state: true },
     view: { state: true },
     goal: { state: true },
@@ -126,8 +142,21 @@ export class GfApp extends LitElement {
     error: { state: true },
   };
 
+  declare authStatus: 'loading' | 'auth' | 'ready';
+  declare user: PublicUser | null;
+  declare authMode: 'login' | 'register';
+  declare authEmail: string;
+  declare authPassword: string;
+  declare authConsent: boolean;
+  declare authError: string | null;
+  declare authBusy: boolean;
+  declare accountMenuOpen: boolean;
+  declare showPrivacy: boolean;
+  declare adminUsers: AdminUserRow[] | null;
+  declare adminDetail: { user: PublicUser; audit: AuditRow[] } | null;
+  declare adminError: string | null;
   declare theme: ThemeId;
-  declare view: 'generate' | 'week';
+  declare view: 'generate' | 'week' | 'admin';
   declare goal: Goal;
   declare experience: Experience;
   declare equipment: Equipment[];
@@ -148,6 +177,19 @@ export class GfApp extends LitElement {
 
   constructor() {
     super();
+    this.authStatus = 'loading';
+    this.user = null;
+    this.authMode = 'login';
+    this.authEmail = '';
+    this.authPassword = '';
+    this.authConsent = false;
+    this.authError = null;
+    this.authBusy = false;
+    this.accountMenuOpen = false;
+    this.showPrivacy = false;
+    this.adminUsers = null;
+    this.adminDetail = null;
+    this.adminError = null;
     this.theme = readInitialTheme();
     this.view = 'generate';
     this.goal = 'build_muscle';
@@ -168,6 +210,26 @@ export class GfApp extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    void this.bootstrap();
+  }
+
+  /** Resolve the current session, then gate the app on whether we're signed in. */
+  private async bootstrap(): Promise<void> {
+    try {
+      const { user } = await api.me();
+      if (user !== null) {
+        this.enterApp(user);
+        return;
+      }
+    } catch {
+      /* Treat any failure as "not signed in" and show the auth screen. */
+    }
+    this.authStatus = 'auth';
+  }
+
+  private enterApp(user: PublicUser): void {
+    this.user = user;
+    this.authStatus = 'ready';
     void this.syncSettings();
   }
 
@@ -178,6 +240,143 @@ export class GfApp extends LitElement {
     } catch {
       /* Offline or first run: keep the locally-stored theme. */
     }
+  }
+
+  private async onSubmitAuth(): Promise<void> {
+    const email = this.authEmail.trim();
+    if (email === '' || this.authPassword === '') {
+      this.authError = 'Enter your email and password.';
+      return;
+    }
+    if (this.authMode === 'register' && !this.authConsent) {
+      this.authError = 'Please accept the privacy terms to create an account.';
+      return;
+    }
+    this.authBusy = true;
+    this.authError = null;
+    try {
+      const { user } =
+        this.authMode === 'register'
+          ? await api.register({
+              email,
+              password: this.authPassword,
+              acceptTerms: this.authConsent,
+            })
+          : await api.login({ email, password: this.authPassword });
+      this.authPassword = '';
+      this.authConsent = false;
+      this.enterApp(user);
+    } catch (err) {
+      this.authError = err instanceof ApiError ? err.message : 'Something went wrong. Try again.';
+    } finally {
+      this.authBusy = false;
+    }
+  }
+
+  private async onLogout(): Promise<void> {
+    try {
+      await api.logout();
+    } catch {
+      /* ignore: clear local state regardless */
+    }
+    this.resetToAuth();
+  }
+
+  private resetToAuth(): void {
+    this.user = null;
+    this.plan = null;
+    this.progress = {};
+    this.selectedDayId = null;
+    this.accountMenuOpen = false;
+    this.adminUsers = null;
+    this.adminDetail = null;
+    this.view = 'generate';
+    this.authMode = 'login';
+    this.authStatus = 'auth';
+  }
+
+  private async onExport(): Promise<void> {
+    this.accountMenuOpen = false;
+    try {
+      const data = await api.exportAccount();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'grindform-export.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not export your data.';
+    }
+  }
+
+  private async onDeleteAccount(): Promise<void> {
+    this.accountMenuOpen = false;
+    const confirmed =
+      typeof window === 'undefined'
+        ? true
+        : window.confirm(
+            'Permanently delete your account and all your plans? This cannot be undone.',
+          );
+    if (!confirmed) return;
+    try {
+      await api.deleteAccount();
+      this.resetToAuth();
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not delete your account.';
+    }
+  }
+
+  private async openAdmin(): Promise<void> {
+    this.accountMenuOpen = false;
+    this.view = 'admin';
+    this.adminDetail = null;
+    this.adminError = null;
+    try {
+      const { users } = await api.adminListUsers();
+      this.adminUsers = users;
+    } catch (err) {
+      this.adminError = err instanceof ApiError ? err.message : 'Could not load users.';
+    }
+  }
+
+  private async openAdminUser(id: string): Promise<void> {
+    try {
+      this.adminDetail = await api.adminGetUser(id);
+    } catch (err) {
+      this.adminError = err instanceof ApiError ? err.message : 'Could not load that user.';
+    }
+  }
+
+  private async onAdminToggleStatus(row: PublicUser): Promise<void> {
+    try {
+      if (row.status === 'active') await api.adminDisableUser(row.id);
+      else await api.adminEnableUser(row.id);
+      await this.refreshAdmin(row.id);
+    } catch (err) {
+      this.adminError = err instanceof ApiError ? err.message : 'Could not update that account.';
+    }
+  }
+
+  private async onAdminDeleteUser(id: string): Promise<void> {
+    const confirmed =
+      typeof window === 'undefined' ? true : window.confirm('Permanently delete this account?');
+    if (!confirmed) return;
+    try {
+      await api.adminDeleteUser(id);
+      this.adminDetail = null;
+      const { users } = await api.adminListUsers();
+      this.adminUsers = users;
+    } catch (err) {
+      this.adminError = err instanceof ApiError ? err.message : 'Could not delete that account.';
+    }
+  }
+
+  private async refreshAdmin(detailId: string): Promise<void> {
+    const { users } = await api.adminListUsers();
+    this.adminUsers = users;
+    if (this.adminDetail !== null) await this.openAdminUser(detailId);
   }
 
   private applyTheme(theme: ThemeId): void {
@@ -303,17 +502,154 @@ export class GfApp extends LitElement {
   }
 
   override render(): TemplateResult {
+    if (this.authStatus === 'loading') {
+      return html`<div class="splash" data-testid="splash">Loading…</div>`;
+    }
+    if (this.authStatus === 'auth') {
+      return this.renderAuth();
+    }
     return html`
       ${this.renderHeader()}
       <main class="content">
         ${this.error !== null
           ? html`<div class="banner error" role="alert" data-testid="error">${this.error}</div>`
           : nothing}
-        ${this.view === 'generate' ? this.renderGenerator() : this.renderWeek()}
+        ${this.renderMain()}
       </main>
       ${this.selectedDayId !== null ? this.renderTracker() : nothing}
+      ${this.showPrivacy ? this.renderPrivacy() : nothing}
     `;
   }
+
+  private renderMain(): TemplateResult {
+    if (this.view === 'admin') return this.renderAdmin();
+    if (this.view === 'week') return this.renderWeek();
+    return this.renderGenerator();
+  }
+
+  private renderAuth(): TemplateResult {
+    const isRegister = this.authMode === 'register';
+    return html`
+      <div class="auth-wrap" data-testid="auth">
+        <section class="auth-card">
+          <div class="brand center">
+            <span class="logo">◣</span>
+            <span class="wordmark">Grind<em>form</em></span>
+          </div>
+          <h1>${isRegister ? 'Create your account' : 'Welcome back'}</h1>
+          <p class="lede">Plan and track your training week.</p>
+          ${this.authError !== null
+            ? html`<div class="banner error" role="alert" data-testid="auth-error">
+                ${this.authError}
+              </div>`
+            : nothing}
+          <form
+            @submit=${(e: Event) => {
+              e.preventDefault();
+              void this.onSubmitAuth();
+            }}
+          >
+            <label class="field">
+              <span>Email</span>
+              <input
+                type="email"
+                autocomplete="email"
+                data-testid="auth-email"
+                .value=${this.authEmail}
+                @input=${(e: Event) => {
+                  this.authEmail = (e.target as HTMLInputElement).value;
+                }}
+              />
+            </label>
+            <label class="field">
+              <span>Password</span>
+              <input
+                type="password"
+                autocomplete=${isRegister ? 'new-password' : 'current-password'}
+                data-testid="auth-password"
+                .value=${this.authPassword}
+                @input=${(e: Event) => {
+                  this.authPassword = (e.target as HTMLInputElement).value;
+                }}
+              />
+            </label>
+            ${isRegister
+              ? html`<label class="consent">
+                  <input
+                    type="checkbox"
+                    data-testid="auth-consent"
+                    .checked=${this.authConsent}
+                    @change=${(e: Event) => {
+                      this.authConsent = (e.target as HTMLInputElement).checked;
+                    }}
+                  />
+                  <span
+                    >I agree to the
+                    <button
+                      type="button"
+                      class="link"
+                      data-testid="open-privacy"
+                      @click=${() => {
+                        this.showPrivacy = true;
+                      }}
+                    >
+                      privacy terms</button
+                    >.</span
+                  >
+                </label>`
+              : nothing}
+            <button class="cta" type="submit" data-testid="auth-submit" ?disabled=${this.authBusy}>
+              ${this.authBusy ? 'Please wait…' : isRegister ? 'Create account' : 'Sign in'}
+            </button>
+          </form>
+          <p class="switch">
+            ${isRegister ? 'Already have an account?' : 'New to Grindform?'}
+            <button
+              type="button"
+              class="link"
+              data-testid="auth-switch"
+              @click=${() => {
+                this.authMode = isRegister ? 'login' : 'register';
+                this.authError = null;
+              }}
+            >
+              ${isRegister ? 'Sign in' : 'Create one'}
+            </button>
+          </p>
+        </section>
+        ${this.showPrivacy ? this.renderPrivacy() : nothing}
+      </div>
+    `;
+  }
+
+  private renderPrivacy(): TemplateResult {
+    return html`
+      <div class="overlay" data-testid="privacy" @click=${this.closePrivacy}>
+        <div class="sheet" @click=${(e: Event) => e.stopPropagation()}>
+          <header class="sheet-head">
+            <h2>Privacy &amp; your data</h2>
+            <button class="icon" data-testid="privacy-close" @click=${this.closePrivacy}>✕</button>
+          </header>
+          <div class="prose">
+            <p>
+              Grindform stores only what it needs to run your training: your email, a securely
+              hashed password, your generated plans, and the sets you log.
+            </p>
+            <ul>
+              <li>Your data is scoped to your account — no one else can see it.</li>
+              <li>Export everything as JSON at any time from the account menu.</li>
+              <li>Delete your account and all associated data permanently, whenever you like.</li>
+              <li>Admin actions on accounts are recorded in an audit log for accountability.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private closePrivacy = (): void => {
+    this.showPrivacy = false;
+  };
 
   private renderHeader(): TemplateResult {
     return html`
@@ -352,7 +688,166 @@ export class GfApp extends LitElement {
             )}
           </select>
         </label>
+        ${this.renderAccountControl()}
       </header>
+    `;
+  }
+
+  private renderAccountControl(): TemplateResult {
+    const user = this.user;
+    if (user === null) return html`${nothing}`;
+    return html`
+      <div class="account">
+        <button
+          class="avatar"
+          data-testid="account-button"
+          aria-haspopup="menu"
+          aria-expanded=${this.accountMenuOpen}
+          @click=${() => {
+            this.accountMenuOpen = !this.accountMenuOpen;
+          }}
+        >
+          ${user.email.charAt(0).toUpperCase()}
+        </button>
+        ${this.accountMenuOpen
+          ? html`<div class="menu" data-testid="account-menu" role="menu">
+              <p class="menu-email" data-testid="account-email">${user.email}</p>
+              ${user.role === 'admin'
+                ? html`<button
+                    class="menu-item"
+                    data-testid="open-admin"
+                    @click=${() => void this.openAdmin()}
+                  >
+                    Admin console
+                  </button>`
+                : nothing}
+              <button
+                class="menu-item"
+                data-testid="open-privacy-menu"
+                @click=${() => {
+                  this.accountMenuOpen = false;
+                  this.showPrivacy = true;
+                }}
+              >
+                Privacy &amp; data
+              </button>
+              <button
+                class="menu-item"
+                data-testid="export-data"
+                @click=${() => void this.onExport()}
+              >
+                Export my data
+              </button>
+              <button
+                class="menu-item danger"
+                data-testid="delete-account"
+                @click=${() => void this.onDeleteAccount()}
+              >
+                Delete account
+              </button>
+              <button class="menu-item" data-testid="logout" @click=${() => void this.onLogout()}>
+                Log out
+              </button>
+            </div>`
+          : nothing}
+      </div>
+    `;
+  }
+
+  private renderAdmin(): TemplateResult {
+    const users = this.adminUsers;
+    return html`
+      <section class="panel" data-testid="admin">
+        <div class="week-head">
+          <h1>Admin console</h1>
+          <button class="ghost" data-testid="admin-refresh" @click=${() => void this.openAdmin()}>
+            Refresh ↻
+          </button>
+        </div>
+        ${this.adminError !== null
+          ? html`<div class="banner error" role="alert" data-testid="admin-error">
+              ${this.adminError}
+            </div>`
+          : nothing}
+        ${users === null
+          ? html`<p>Loading users…</p>`
+          : html`
+              <table class="admin-table" data-testid="admin-users">
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Plans</th>
+                    <th>Last login</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${users.map(
+                    (u) => html`
+                      <tr data-testid=${`admin-row-${u.id}`}>
+                        <td>${u.email}</td>
+                        <td>${u.role}</td>
+                        <td>
+                          <span class=${u.status === 'active' ? 'pill ok' : 'pill off'}>
+                            ${u.status}
+                          </span>
+                        </td>
+                        <td>${u.planCount}</td>
+                        <td>${u.lastLoginAt === null ? '—' : u.lastLoginAt.slice(0, 10)}</td>
+                        <td>
+                          <button
+                            class="link"
+                            data-testid=${`admin-view-${u.id}`}
+                            @click=${() => void this.openAdminUser(u.id)}
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    `,
+                  )}
+                </tbody>
+              </table>
+            `}
+        ${this.adminDetail !== null ? this.renderAdminDetail(this.adminDetail) : nothing}
+      </section>
+    `;
+  }
+
+  private renderAdminDetail(detail: { user: PublicUser; audit: AuditRow[] }): TemplateResult {
+    const u = detail.user;
+    return html`
+      <div class="admin-detail" data-testid="admin-detail">
+        <h2>${u.email}</h2>
+        <div class="admin-actions">
+          <button
+            class="ghost"
+            data-testid="admin-toggle-status"
+            @click=${() => void this.onAdminToggleStatus(u)}
+          >
+            ${u.status === 'active' ? 'Disable account' : 'Enable account'}
+          </button>
+          <button
+            class="ghost danger"
+            data-testid="admin-delete"
+            @click=${() => void this.onAdminDeleteUser(u.id)}
+          >
+            Delete account
+          </button>
+        </div>
+        <h3>Audit trail</h3>
+        <ul class="audit" data-testid="admin-audit">
+          ${detail.audit.map(
+            (a) =>
+              html`<li>
+                <code>${a.action}</code>
+                <span class="audit-time">${a.createdAt.slice(0, 19).replace('T', ' ')}</span>
+              </li>`,
+          )}
+        </ul>
+      </div>
     `;
   }
 
@@ -1185,6 +1680,192 @@ export class GfApp extends LitElement {
     }
     .done-btn:disabled {
       opacity: 0.6;
+    }
+    .splash {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      color: var(--gf-muted);
+      font-weight: 600;
+    }
+    .auth-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .auth-card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--gf-surface);
+      border: 1px solid var(--gf-border);
+      border-radius: var(--gf-radius-lg);
+      padding: 28px;
+      box-shadow: var(--gf-shadow-sm);
+    }
+    .brand.center {
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+    .auth-card form {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-top: 16px;
+    }
+    .consent {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      color: var(--gf-muted);
+      font-size: 0.92rem;
+    }
+    .consent input {
+      margin-top: 3px;
+      width: 18px;
+      height: 18px;
+    }
+    .link {
+      appearance: none;
+      background: none;
+      border: none;
+      padding: 0;
+      font: inherit;
+      color: var(--gf-accent);
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .switch {
+      margin-top: 16px;
+      color: var(--gf-muted);
+      text-align: center;
+    }
+    .account {
+      position: relative;
+    }
+    .avatar {
+      width: 40px;
+      height: 40px;
+      min-height: 40px;
+      border-radius: 50%;
+      border: 1px solid var(--gf-border);
+      background: var(--gf-surface-2);
+      color: var(--gf-text);
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .menu {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      z-index: 20;
+      min-width: 220px;
+      background: var(--gf-surface);
+      border: 1px solid var(--gf-border);
+      border-radius: var(--gf-radius-sm);
+      box-shadow: var(--gf-shadow-sm);
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+    }
+    .menu-email {
+      margin: 4px 10px 8px;
+      color: var(--gf-muted);
+      font-size: 0.85rem;
+      word-break: break-all;
+    }
+    .menu-item {
+      appearance: none;
+      text-align: left;
+      background: none;
+      border: none;
+      font: inherit;
+      color: var(--gf-text);
+      padding: 10px 10px;
+      min-height: 44px;
+      border-radius: var(--gf-radius-sm);
+      cursor: pointer;
+    }
+    .menu-item:hover {
+      background: var(--gf-hover);
+    }
+    .menu-item.danger,
+    .ghost.danger {
+      color: #c0392b;
+    }
+    .admin-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 0.92rem;
+    }
+    .admin-table th,
+    .admin-table td {
+      text-align: left;
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--gf-border);
+    }
+    .admin-table th {
+      color: var(--gf-muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .pill {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    .pill.ok {
+      background: color-mix(in srgb, var(--gf-accent) 18%, transparent);
+      color: var(--gf-accent);
+    }
+    .pill.off {
+      background: color-mix(in srgb, #c0392b 18%, transparent);
+      color: #c0392b;
+    }
+    .admin-detail {
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 1px solid var(--gf-border);
+    }
+    .admin-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 10px 0 18px;
+    }
+    .audit {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .audit li {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 10px;
+      background: var(--gf-surface-2);
+      border-radius: var(--gf-radius-sm);
+    }
+    .audit-time {
+      color: var(--gf-muted);
+      font-size: 0.85rem;
+    }
+    .prose {
+      color: var(--gf-text);
+      line-height: 1.55;
+    }
+    .prose ul {
+      padding-left: 20px;
     }
   `;
 }

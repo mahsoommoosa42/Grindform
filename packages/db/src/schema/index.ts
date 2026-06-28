@@ -5,4 +5,4 @@
  * the typed Drizzle handle.
  */
 
-export { planDays, plans, setLogs, settings } from './tables.ts';
+export { auditLog, planDays, plans, sessions, setLogs, settings, users } from './tables.ts';

@@ -19,6 +19,7 @@
       "name": "@grindform/api",
       "version": "0.1.0",
       "dependencies": {
+        "@grindform/auth": "workspace:*",
         "@grindform/catalog": "workspace:*",
         "@grindform/core": "workspace:*",
         "@grindform/db": "workspace:*",
@@ -31,6 +32,18 @@
         "@electric-sql/pglite": "0.2.14",
         "@vitest/coverage-v8": "2.1.8",
         "drizzle-orm": "0.36.4",
+        "typescript": "5.7.2",
+        "vitest": "2.1.8",
+      },
+    },
+    "packages/auth": {
+      "name": "@grindform/auth",
+      "version": "0.1.0",
+      "dependencies": {
+        "@grindform/core": "workspace:*",
+      },
+      "devDependencies": {
+        "@vitest/coverage-v8": "2.1.8",
         "typescript": "5.7.2",
         "vitest": "2.1.8",
       },
@@ -110,6 +123,7 @@
       "dependencies": {
         "@electric-sql/pglite": "0.2.14",
         "@grindform/api": "workspace:*",
+        "@grindform/auth": "workspace:*",
         "@grindform/core": "workspace:*",
         "@grindform/db": "workspace:*",
         "drizzle-orm": "0.36.4",
@@ -201,6 +215,8 @@
     "@eslint/plugin-kit": ["@eslint/plugin-kit@0.2.8", "", { "dependencies": { "@eslint/core": "^0.13.0", "levn": "^0.4.1" } }, "sha512-ZAoA40rNMPwSm+AeHpCq8STiNAwzWLJuP8Xv4CHIc9wv/PSuExjMrmjfYNj682vW0OOiZ1HKxzvjQr9XZIisQA=="],
 
     "@grindform/api": ["@grindform/api@workspace:packages/api"],
+
+    "@grindform/auth": ["@grindform/auth@workspace:packages/auth"],
 
     "@grindform/catalog": ["@grindform/catalog@workspace:packages/catalog"],
 

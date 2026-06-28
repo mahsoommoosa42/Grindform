@@ -1,21 +1,27 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  isAuditId,
   isDayId,
   isExerciseSlug,
   isLogId,
   isPlanId,
+  isSessionId,
   isSlotId,
   isUserId,
+  newAuditId,
   newDayId,
   newLogId,
   newPlanId,
+  newSessionId,
   newSlotId,
   newUserId,
+  parseAuditId,
   parseDayId,
   parseExerciseSlug,
   parseLogId,
   parsePlanId,
+  parseSessionId,
   parseSlotId,
   parseUserId,
 } from '../src/ids.ts';
@@ -23,6 +29,8 @@ import {
 describe('id factories produce prefixed, well-formed, sortable IDs', () => {
   const cases = [
     { make: newUserId, prefix: 'usr', guard: isUserId },
+    { make: newSessionId, prefix: 'ses', guard: isSessionId },
+    { make: newAuditId, prefix: 'aud', guard: isAuditId },
     { make: newPlanId, prefix: 'pln', guard: isPlanId },
     { make: newDayId, prefix: 'day', guard: isDayId },
     { make: newSlotId, prefix: 'slt', guard: isSlotId },
@@ -102,6 +110,15 @@ describe('throwing parsers', () => {
     expect(parseDayId(day)).toBe(day);
     expect(parseSlotId(slot)).toBe(slot);
     expect(parseLogId(log)).toBe(log);
+  });
+
+  it('parseSessionId / parseAuditId round-trip valid ids and throw otherwise', () => {
+    const session = newSessionId();
+    const audit = newAuditId();
+    expect(parseSessionId(session)).toBe(session);
+    expect(parseAuditId(audit)).toBe(audit);
+    expect(() => parseSessionId('nope')).toThrow('invalid SessionId: nope');
+    expect(() => parseAuditId('nope')).toThrow('invalid AuditId: nope');
   });
 
   it('parseUserId / parseDayId / parseSlotId / parseLogId throw on bad input', () => {

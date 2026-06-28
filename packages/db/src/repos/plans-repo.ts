@@ -7,9 +7,9 @@
  * JSON columns are stored verbatim.
  */
 
-import { asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 
-import type { Goal, Experience, PlanId, UserId } from '@grindform/core';
+import type { DayId, Goal, Experience, PlanId, UserId } from '@grindform/core';
 import type { PlanDay, WeeklyPlan } from '@grindform/planner';
 
 import type { DbOrTx } from '../client.ts';
@@ -103,8 +103,49 @@ export const listPlanSummaries = async (
   return rows;
 };
 
-/** Delete a plan (cascading to its days). Returns whether a row was removed. */
-export const deletePlan = async (db: DbOrTx, planId: PlanId): Promise<boolean> => {
-  const deleted = await db.delete(plans).where(eq(plans.id, planId)).returning({ id: plans.id });
+/** True iff `planId` exists and belongs to `userId`. Guards against IDOR. */
+export const planBelongsToUser = async (
+  db: DbOrTx,
+  planId: PlanId,
+  userId: UserId,
+): Promise<boolean> => {
+  const [row] = await db
+    .select({ id: plans.id })
+    .from(plans)
+    .where(and(eq(plans.id, planId), eq(plans.userId, userId)))
+    .limit(1);
+  return row !== undefined;
+};
+
+/** Delete a plan owned by `userId` (cascading to its days). Returns whether a row was removed. */
+export const deletePlan = async (db: DbOrTx, planId: PlanId, userId: UserId): Promise<boolean> => {
+  const deleted = await db
+    .delete(plans)
+    .where(and(eq(plans.id, planId), eq(plans.userId, userId)))
+    .returning({ id: plans.id });
   return deleted.length > 0;
+};
+
+/** Every plan id belonging to a user (for export/erasure). */
+export const listPlanIdsForUser = async (
+  db: DbOrTx,
+  userId: UserId,
+): Promise<readonly PlanId[]> => {
+  const rows = await db.select({ id: plans.id }).from(plans).where(eq(plans.userId, userId));
+  return rows.map((r) => r.id);
+};
+
+/** True iff `dayId` belongs to a plan owned by `userId`. Guards tracker IDOR. */
+export const dayBelongsToUser = async (
+  db: DbOrTx,
+  dayId: DayId,
+  userId: UserId,
+): Promise<boolean> => {
+  const [row] = await db
+    .select({ id: planDays.id })
+    .from(planDays)
+    .innerJoin(plans, eq(plans.id, planDays.planId))
+    .where(and(eq(planDays.id, dayId), eq(plans.userId, userId)))
+    .limit(1);
+  return row !== undefined;
 };

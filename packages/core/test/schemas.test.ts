@@ -2,11 +2,17 @@ import { describe, expect, it } from 'vitest';
 
 import { newPlanId } from '../src/ids.ts';
 import {
+  AccountStatusSchema,
+  AuditActionSchema,
   DaySpecSchema,
+  EmailSchema,
   ExerciseSlugSchema,
   GeneratePlanInputSchema,
+  LoginInputSchema,
   PlanIdSchema,
+  RegisterInputSchema,
   RepSchemeSchema,
+  RoleSchema,
   TimeBudgetSchema,
   WEEKDAYS,
 } from '../src/schemas.ts';
@@ -109,5 +115,52 @@ describe('GeneratePlanInputSchema', () => {
     expect(
       GeneratePlanInputSchema.safeParse({ goal: 'recomp', days: [...days, days[0]] }).success,
     ).toBe(false);
+  });
+});
+
+describe('accounts & auth schemas', () => {
+  it('EmailSchema trims, lowercases, and validates shape', () => {
+    expect(EmailSchema.parse('  Gargi@Example.COM ')).toBe('gargi@example.com');
+    expect(EmailSchema.safeParse('nope').success).toBe(false);
+    expect(EmailSchema.safeParse('a@b').success).toBe(false);
+    expect(EmailSchema.safeParse('a b@c.com').success).toBe(false);
+  });
+
+  it('RoleSchema and AccountStatusSchema fix their vocabularies', () => {
+    expect(RoleSchema.options).toEqual(['member', 'admin']);
+    expect(AccountStatusSchema.options).toEqual(['active', 'disabled']);
+  });
+
+  it('RegisterInputSchema requires acceptTerms === true and an 8+ char password', () => {
+    const ok = RegisterInputSchema.parse({
+      email: 'gargi@example.com',
+      password: 'correct-horse',
+      acceptTerms: true,
+    });
+    expect(ok.acceptTerms).toBe(true);
+    expect(
+      RegisterInputSchema.safeParse({
+        email: 'gargi@example.com',
+        password: 'short',
+        acceptTerms: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      RegisterInputSchema.safeParse({
+        email: 'gargi@example.com',
+        password: 'long-enough',
+        acceptTerms: false,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('LoginInputSchema accepts any non-empty password', () => {
+    expect(LoginInputSchema.parse({ email: 'a@b.com', password: 'x' }).password).toBe('x');
+    expect(LoginInputSchema.safeParse({ email: 'a@b.com', password: '' }).success).toBe(false);
+  });
+
+  it('AuditActionSchema enumerates the closed action vocabulary', () => {
+    expect(AuditActionSchema.safeParse('admin.user.delete').success).toBe(true);
+    expect(AuditActionSchema.safeParse('account.hack').success).toBe(false);
   });
 });

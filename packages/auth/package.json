@@ -1,12 +1,17 @@
 {
-  "name": "@grindform/api",
+  "name": "@grindform/auth",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./passwords": "./src/passwords.ts",
+    "./tokens": "./src/tokens.ts",
+    "./cookies": "./src/cookies.ts",
+    "./sessions": "./src/sessions.ts",
+    "./admin": "./src/admin.ts"
   },
   "scripts": {
     "build": "echo 'source-only package; no build step'",
@@ -16,18 +21,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@grindform/core": "workspace:*",
-    "@grindform/auth": "workspace:*",
-    "@grindform/catalog": "workspace:*",
-    "@grindform/planner": "workspace:*",
-    "@grindform/db": "workspace:*",
-    "@grindform/tracker": "workspace:*",
-    "hono": "4.6.14",
-    "zod": "3.25.63"
+    "@grindform/core": "workspace:*"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "0.2.14",
-    "drizzle-orm": "0.36.4",
     "typescript": "5.7.2",
     "vitest": "2.1.8",
     "@vitest/coverage-v8": "2.1.8"

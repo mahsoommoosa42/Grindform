@@ -18,4 +18,5 @@ const migrationsDir = join(here, '..', 'migrations');
 /** Every migration, in apply order. */
 export const MIGRATIONS: readonly Migration[] = [
   { name: '0000_initial', sqlText: readFileSync(join(migrationsDir, '0000_initial.sql'), 'utf8') },
+  { name: '0001_auth', sqlText: readFileSync(join(migrationsDir, '0001_auth.sql'), 'utf8') },
 ];

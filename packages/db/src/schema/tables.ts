@@ -11,6 +11,9 @@
 import { doublePrecision, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
 import type {
+  AccountStatus,
+  AuditAction,
+  AuditId,
   DayActivity,
   DayId,
   ExerciseSlug,
@@ -19,6 +22,8 @@ import type {
   LogId,
   MuscleGroup,
   PlanId,
+  Role,
+  SessionId,
   SlotId,
   ThemeId,
   TimeBudget,
@@ -26,6 +31,49 @@ import type {
   Weekday,
 } from '@grindform/core';
 import type { SessionBlock } from '@grindform/planner';
+
+/** A registered account. Email is stored already-normalised (lowercased). */
+export const users = pgTable('users', {
+  id: text('id').primaryKey().$type<UserId>(),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  role: text('role').notNull().$type<Role>(),
+  status: text('status').notNull().$type<AccountStatus>(),
+  termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+});
+
+/** A login session. Only the SHA-256 hash of the cookie token is stored. */
+export const sessions = pgTable('sessions', {
+  id: text('id').primaryKey().$type<SessionId>(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' })
+    .$type<UserId>(),
+  tokenHash: text('token_hash').notNull().unique(),
+  userAgent: text('user_agent'),
+  ipAddress: text('ip_address'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+});
+
+/**
+ * Append-only audit trail of security- and support-relevant actions
+ * (logins, exports, deletions, admin operations). Rows survive the
+ * deletion of the users they reference so the trail stays intact;
+ * `actorUserId`/`targetUserId` are nullable and not FK-constrained.
+ */
+export const auditLog = pgTable('audit_log', {
+  id: text('id').primaryKey().$type<AuditId>(),
+  action: text('action').notNull().$type<AuditAction>(),
+  actorUserId: text('actor_user_id').$type<UserId>(),
+  targetUserId: text('target_user_id').$type<UserId>(),
+  details: jsonb('details').notNull().$type<Record<string, unknown>>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 /** A generated weekly plan (its days live in {@link planDays}). */
 export const plans = pgTable('plans', {

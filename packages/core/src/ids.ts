@@ -28,6 +28,12 @@ type Brand<T, B extends string> = T & { readonly [__brand]: B };
 /** Identifier for a user account. Prefix: `usr_`. */
 export type UserId = Brand<string, 'UserId'>;
 
+/** Identifier for an authenticated session. Prefix: `ses_`. */
+export type SessionId = Brand<string, 'SessionId'>;
+
+/** Identifier for an audit-log entry. Prefix: `aud_`. */
+export type AuditId = Brand<string, 'AuditId'>;
+
 /**
  * Stable identifier for a catalog exercise. Unlike the ULID-based IDs
  * below, the exercise catalog is code (not a DB table), so its entries
@@ -54,6 +60,8 @@ export type LogId = Brand<string, 'LogId'>;
  */
 const PREFIX = {
   user: 'usr',
+  session: 'ses',
+  audit: 'aud',
   plan: 'pln',
   day: 'day',
   slot: 'slt',
@@ -74,6 +82,12 @@ const make = <T extends string>(prefix: string): T => `${prefix}_${ulid()}` as T
 /** Mint a fresh, time-sortable {@link UserId}. */
 export const newUserId = (): UserId => make<UserId>(PREFIX.user);
 
+/** Mint a fresh, time-sortable {@link SessionId}. */
+export const newSessionId = (): SessionId => make<SessionId>(PREFIX.session);
+
+/** Mint a fresh, time-sortable {@link AuditId}. */
+export const newAuditId = (): AuditId => make<AuditId>(PREFIX.audit);
+
 /** Mint a fresh, time-sortable {@link PlanId}. */
 export const newPlanId = (): PlanId => make<PlanId>(PREFIX.plan);
 
@@ -88,6 +102,12 @@ export const newLogId = (): LogId => make<LogId>(PREFIX.log);
 
 /** Type guard: true iff `s` is a syntactically-valid {@link UserId}. */
 export const isUserId = (s: string): s is UserId => matcher(PREFIX.user).test(s);
+
+/** Type guard: true iff `s` is a syntactically-valid {@link SessionId}. */
+export const isSessionId = (s: string): s is SessionId => matcher(PREFIX.session).test(s);
+
+/** Type guard: true iff `s` is a syntactically-valid {@link AuditId}. */
+export const isAuditId = (s: string): s is AuditId => matcher(PREFIX.audit).test(s);
 
 /**
  * Kebab-case slug pattern for catalog exercises: lowercase alphanumerics
@@ -128,6 +148,26 @@ export const parsePlanId = (s: string): PlanId => {
  */
 export const parseExerciseSlug = (s: string): ExerciseSlug => {
   if (!isExerciseSlug(s)) throw new Error(`invalid ExerciseSlug: ${s}`);
+  return s;
+};
+
+/**
+ * Validate `s` and return it branded as a {@link UserId}.
+ *
+ * @throws Error if `s` is not a syntactically-valid user ID.
+ */
+export const parseSessionId = (s: string): SessionId => {
+  if (!isSessionId(s)) throw new Error(`invalid SessionId: ${s}`);
+  return s;
+};
+
+/**
+ * Validate `s` and return it branded as an {@link AuditId}.
+ *
+ * @throws Error if `s` is not a syntactically-valid audit ID.
+ */
+export const parseAuditId = (s: string): AuditId => {
+  if (!isAuditId(s)) throw new Error(`invalid AuditId: ${s}`);
   return s;
 };
 

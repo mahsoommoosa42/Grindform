@@ -106,6 +106,33 @@ export interface Settings {
   readonly preferences: Record<string, unknown>;
 }
 
+export type Role = 'member' | 'admin';
+export type AccountStatus = 'active' | 'disabled';
+
+/** The public projection of an account returned by the API. */
+export interface PublicUser {
+  readonly id: string;
+  readonly email: string;
+  readonly role: Role;
+  readonly status: AccountStatus;
+  readonly createdAt: string;
+  readonly lastLoginAt: string | null;
+}
+
+/** A row in the admin user list (public user + a plan count). */
+export interface AdminUserRow extends PublicUser {
+  readonly planCount: number;
+}
+
+/** One entry in an account's audit trail, as shown in the admin console. */
+export interface AuditRow {
+  readonly id: string;
+  readonly action: string;
+  readonly actorUserId: string | null;
+  readonly details: Record<string, unknown>;
+  readonly createdAt: string;
+}
+
 /** One day's spec in a generate request. */
 export interface DaySpecInput {
   readonly weekday: Weekday;

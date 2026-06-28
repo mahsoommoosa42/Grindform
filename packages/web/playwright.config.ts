@@ -16,6 +16,16 @@ import { defineConfig } from '@playwright/test';
 const PORT = Number(process.env.PORT ?? 3100);
 const BASE_URL = `http://localhost:${PORT}`;
 
+/** Project names; each maps to its own allowlisted admin email (see webServer). */
+const PROJECTS = [
+  'chromium-mobile',
+  'chromium-tablet',
+  'chromium-laptop',
+  'webkit-mobile',
+  'webkit-tablet',
+  'webkit-laptop',
+] as const;
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -62,6 +72,18 @@ export default defineConfig({
     url: `${BASE_URL}/v1/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
-    env: { PORT: String(PORT), GRINDFORM_DATA_DIR: 'memory' },
+    env: {
+      PORT: String(PORT),
+      GRINDFORM_DATA_DIR: 'memory',
+      // The suite runs over plain HTTP, so Secure cookies would never be
+      // stored by the browser — disable the Secure attribute for the harness.
+      GRINDFORM_INSECURE_COOKIES: '1',
+      // The whole matrix signs up many accounts from one IP; lift the auth
+      // throttle so the production default doesn't trip the harness.
+      GRINDFORM_AUTH_RATE_LIMIT: '100000',
+      // One allowlisted admin per project, so the admin spec can sign in as an
+      // admin without colliding across the parallel projects' shared server.
+      ADMIN_EMAILS: PROJECTS.map((name) => `admin-${name}@grindform.test`).join(','),
+    },
   },
 });

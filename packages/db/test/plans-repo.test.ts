@@ -5,7 +5,15 @@ import { generatePlan } from '@grindform/planner';
 import type { WeeklyPlan } from '@grindform/planner';
 
 import type { Db } from '../src/client.ts';
-import { createPlan, deletePlan, getPlan, listPlanSummaries } from '../src/repos/plans-repo.ts';
+import {
+  createPlan,
+  dayBelongsToUser,
+  deletePlan,
+  getPlan,
+  listPlanIdsForUser,
+  listPlanSummaries,
+  planBelongsToUser,
+} from '../src/repos/plans-repo.ts';
 import { freshDb } from './helpers/db.ts';
 
 const makePlan = (): WeeklyPlan => {
@@ -78,14 +86,40 @@ describe('plans-repo', () => {
     expect(await listPlanSummaries(db, newUserId())).toHaveLength(0);
   });
 
-  it('deletes a plan (cascading days) and reports success', async () => {
+  it('deletes a plan owned by the user (cascading days) and reports success', async () => {
+    const userId = newUserId();
     const plan = makePlan();
-    await createPlan(db, newUserId(), plan);
-    expect(await deletePlan(db, plan.id)).toBe(true);
+    await createPlan(db, userId, plan);
+    expect(await deletePlan(db, plan.id, userId)).toBe(true);
     expect(await getPlan(db, plan.id)).toBeUndefined();
   });
 
-  it('deletePlan returns false when nothing matched', async () => {
-    expect(await deletePlan(db, newPlanId())).toBe(false);
+  it('deletePlan returns false when nothing matched or the plan is another user’s', async () => {
+    const owner = newUserId();
+    const plan = makePlan();
+    await createPlan(db, owner, plan);
+    expect(await deletePlan(db, plan.id, newUserId())).toBe(false);
+    expect(await deletePlan(db, newPlanId(), owner)).toBe(false);
+  });
+
+  it('planBelongsToUser and listPlanIdsForUser scope by owner', async () => {
+    const owner = newUserId();
+    const other = newUserId();
+    const plan = makePlan();
+    await createPlan(db, owner, plan);
+    expect(await planBelongsToUser(db, plan.id, owner)).toBe(true);
+    expect(await planBelongsToUser(db, plan.id, other)).toBe(false);
+    expect(await listPlanIdsForUser(db, owner)).toEqual([plan.id]);
+    expect(await listPlanIdsForUser(db, other)).toEqual([]);
+  });
+
+  it('dayBelongsToUser checks ownership through the plan', async () => {
+    const owner = newUserId();
+    const other = newUserId();
+    const plan = makePlan();
+    await createPlan(db, owner, plan);
+    const dayId = plan.days[0]!.id;
+    expect(await dayBelongsToUser(db, dayId, owner)).toBe(true);
+    expect(await dayBelongsToUser(db, dayId, other)).toBe(false);
   });
 });

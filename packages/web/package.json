@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@grindform/api": "workspace:*",
+    "@grindform/auth": "workspace:*",
     "@grindform/core": "workspace:*",
     "@grindform/db": "workspace:*",
     "@electric-sql/pglite": "0.2.14",

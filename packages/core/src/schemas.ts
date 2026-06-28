@@ -206,3 +206,83 @@ export const GeneratePlanInputSchema = z.object({
   seed: z.number().int().nonnegative().optional(),
 });
 export type GeneratePlanInput = z.infer<typeof GeneratePlanInputSchema>;
+
+// ---------------------------------------------------------------------------
+// Accounts & authentication.
+// ---------------------------------------------------------------------------
+
+/**
+ * Account role. `member` is the default for every self-registered user;
+ * `admin` unlocks the support console. Admin status is granted by the
+ * server (env allowlist), never by client input.
+ */
+export const RoleSchema = z.enum(['member', 'admin']);
+export type Role = z.infer<typeof RoleSchema>;
+
+/**
+ * Account lifecycle status. `active` accounts can sign in; `disabled`
+ * accounts are blocked by support without losing their data (a GDPR-safe
+ * alternative to deletion).
+ */
+export const AccountStatusSchema = z.enum(['active', 'disabled']);
+export type AccountStatus = z.infer<typeof AccountStatusSchema>;
+
+/**
+ * An email address, normalised to lowercase and trimmed. Length-capped
+ * to fit a btree index and reject pathological input. The regex is the
+ * deliberately-simple "has an @ with something either side and a dotted
+ * domain" check — full RFC 5322 validation is famously not worth it.
+ */
+export const EmailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3)
+  .max(254)
+  .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, { message: 'enter a valid email address' });
+export type Email = z.infer<typeof EmailSchema>;
+
+/**
+ * A plaintext password at registration. Floor of 8 (NIST 800-63B) and a
+ * ceiling of 200 to bound the scrypt work an attacker can force per
+ * request. We deliberately don't mandate character classes — length is
+ * what matters and composition rules push users toward weaker patterns.
+ */
+export const PasswordSchema = z.string().min(8).max(200);
+
+/**
+ * Registration input. `acceptTerms` must be literally `true` — the
+ * consent checkbox is a GDPR lawful-basis record, so the schema refuses
+ * a missing or false value rather than silently defaulting it.
+ */
+export const RegisterInputSchema = z.object({
+  email: EmailSchema,
+  password: PasswordSchema,
+  acceptTerms: z.literal(true, {
+    errorMap: () => ({ message: 'you must accept the terms to create an account' }),
+  }),
+});
+export type RegisterInput = z.infer<typeof RegisterInputSchema>;
+
+/** Login input. The password is only length-bounded, not policy-checked. */
+export const LoginInputSchema = z.object({
+  email: EmailSchema,
+  password: z.string().min(1).max(200),
+});
+export type LoginInput = z.infer<typeof LoginInputSchema>;
+
+/**
+ * A support action recorded in the audit log. The vocabulary is closed
+ * so the admin UI and the retention policy can both reason about it.
+ */
+export const AuditActionSchema = z.enum([
+  'account.register',
+  'account.login',
+  'account.logout',
+  'account.export',
+  'account.delete',
+  'admin.user.disable',
+  'admin.user.enable',
+  'admin.user.delete',
+]);
+export type AuditAction = z.infer<typeof AuditActionSchema>;
