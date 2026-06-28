@@ -83,31 +83,32 @@
   --gf-shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.7);
 }
 
-/* Girly Pop — a refined rose variant of the paper palette. */
+/* Girly Pop — "Cherry Bomb": bold, retro, high-energy. White canvas, near-black
+   ink, cherry-red accent, blush-pink secondary surfaces, cream-yellow highlight. */
 :root[data-theme='girlypop'] {
   color-scheme: light;
-  --gf-bg: #fff6f4;
-  --gf-surface: #fffdfc;
-  --gf-surface-2: #fcedec;
-  --gf-hover: #fae3e2;
-  --gf-text: #4a2230;
-  --gf-text-soft: #6a3346;
-  --gf-muted: #9b7480;
-  --gf-faint: #c2a2ac;
-  --gf-accent: #d9577e;
-  --gf-accent-2: #b53e62;
-  --gf-accent-tint: #eca0b4;
+  --gf-bg: #fff5f9;
+  --gf-surface: #ffffff;
+  --gf-surface-2: #ffe3ee;
+  --gf-hover: #ffd2e2;
+  --gf-text: #1a000f;
+  --gf-text-soft: #4a1326;
+  --gf-muted: #8a5066;
+  --gf-faint: #c79aac;
+  --gf-accent: #e8003d;
+  --gf-accent-2: #c30033;
+  --gf-accent-tint: #ff85b4;
   --gf-accent-text: #ffffff;
-  --gf-accent-soft: rgba(217, 87, 126, 0.12);
-  --gf-border: #f1dcd9;
-  --gf-border-soft: #f7e8e6;
-  --gf-ring: rgba(217, 87, 126, 0.3);
+  --gf-accent-soft: rgba(232, 0, 61, 0.1);
+  --gf-border: #ffd0e0;
+  --gf-border-soft: #ffe3ee;
+  --gf-ring: rgba(232, 0, 61, 0.32);
   --gf-success: #1f9e8f;
-  --gf-danger: #d63d5f;
+  --gf-danger: #e8003d;
   --gf-radius: 14px;
-  --gf-shadow-sm: 0 2px 6px rgba(180, 51, 96, 0.08);
-  --gf-shadow: 0 8px 26px rgba(180, 51, 96, 0.14);
-  --gf-shadow-lg: 0 30px 80px rgba(180, 51, 96, 0.2);
+  --gf-shadow-sm: 0 2px 6px rgba(232, 0, 61, 0.08);
+  --gf-shadow: 0 8px 26px rgba(232, 0, 61, 0.14);
+  --gf-shadow-lg: 0 30px 80px rgba(232, 0, 61, 0.2);
 }
 
 /* Minimal — Quillcast "Light": crisp neutral white, rust accent kept. */

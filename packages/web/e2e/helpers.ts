@@ -7,7 +7,7 @@
  */
 
 import { expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 const DEFAULT_PASSWORD = 'correct-horse-battery';
 
@@ -75,6 +75,19 @@ export const openApp = async (page: Page): Promise<void> => {
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await signUp(page);
+};
+
+/**
+ * Open the account menu (where the theme picker now lives) and return the
+ * theme `<select>` locator, ready to `selectOption` against.
+ */
+export const openThemePicker = async (page: Page): Promise<Locator> => {
+  const picker = page.getByTestId('theme-picker');
+  if (!(await picker.isVisible().catch(() => false))) {
+    await page.getByTestId('account-button').click();
+    await expect(picker).toBeVisible();
+  }
+  return picker;
 };
 
 /** Does the active browser context expose touch input? */

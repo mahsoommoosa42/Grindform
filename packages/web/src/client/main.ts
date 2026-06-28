@@ -12,8 +12,8 @@
  * `declare` and initialised in the constructor.
  */
 
-import { css, html, LitElement, nothing } from 'lit';
-import type { TemplateResult } from 'lit';
+import { css, html, LitElement, nothing, svg } from 'lit';
+import type { SVGTemplateResult, TemplateResult } from 'lit';
 
 import { GOAL_PROFILES, prescribeLoad } from '@grindform/loadcalc';
 import type { LoadGoal, Prescription } from '@grindform/loadcalc';
@@ -43,6 +43,27 @@ const THEMES: readonly { id: ThemeId; label: string }[] = [
   { id: 'girlypop', label: 'Girly Pop' },
   { id: 'minimal', label: 'Minimal' },
 ];
+
+/** Stroke icons for the nav tabs (shown in the mobile bottom bar). */
+const svgBase = (paths: SVGTemplateResult): SVGTemplateResult => svg`
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    ${paths}
+  </svg>
+`;
+const ICON_BUILD = svgBase(svg`<path d="M4 9v6M7 6v12M17 6v12M20 9v6M7 12h10" />`);
+const ICON_WEEK = svgBase(
+  svg`<rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" />`,
+);
+const ICON_CALC = svgBase(
+  svg`<rect x="5" y="2" width="14" height="20" rx="2" /><path d="M8 6h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 19h4" />`,
+);
 
 const GOALS: readonly { id: Goal; label: string }[] = [
   { id: 'build_muscle', label: 'Build muscle' },
@@ -779,47 +800,50 @@ export class GfApp extends LitElement {
           <span class="logo">◣</span>
           <span class="wordmark">Grind<em>form</em></span>
         </div>
-        <nav class="nav">
-          <button
-            class=${this.view === 'generate' ? 'tab active' : 'tab'}
-            data-testid="nav-generate"
-            @click=${() => {
-              this.view = 'generate';
-            }}
-          >
-            Build
-          </button>
-          <button
-            class=${this.view === 'week' ? 'tab active' : 'tab'}
-            data-testid="nav-week"
-            ?disabled=${this.plan === null}
-            @click=${() => {
-              if (this.plan !== null) this.view = 'week';
-            }}
-          >
-            My week
-          </button>
-          <button
-            class=${this.view === 'calculator' ? 'tab active' : 'tab'}
-            data-testid="nav-calculator"
-            @click=${() => {
-              this.view = 'calculator';
-            }}
-          >
-            Load calc
-          </button>
-        </nav>
-        <label class="theme">
-          <span class="sr-only">Theme</span>
-          <select data-testid="theme-picker" @change=${this.onThemeChange}>
-            ${THEMES.map(
-              (t) =>
-                html`<option value=${t.id} ?selected=${t.id === this.theme}>${t.label}</option>`,
-            )}
-          </select>
-        </label>
-        ${this.renderAccountControl()}
+        ${this.renderNav()} ${this.renderAccountControl()}
       </header>
+    `;
+  }
+
+  /**
+   * The three primary views. Rendered inline in the header on wide screens and
+   * repositioned by CSS into a fixed bottom tab bar on phones.
+   */
+  private renderNav(): TemplateResult {
+    return html`
+      <nav class="nav" data-testid="nav">
+        <button
+          class=${this.view === 'generate' ? 'tab active' : 'tab'}
+          data-testid="nav-generate"
+          @click=${() => {
+            this.view = 'generate';
+          }}
+        >
+          <span class="tab-icon" aria-hidden="true">${ICON_BUILD}</span>
+          <span class="tab-label">Build</span>
+        </button>
+        <button
+          class=${this.view === 'week' ? 'tab active' : 'tab'}
+          data-testid="nav-week"
+          ?disabled=${this.plan === null}
+          @click=${() => {
+            if (this.plan !== null) this.view = 'week';
+          }}
+        >
+          <span class="tab-icon" aria-hidden="true">${ICON_WEEK}</span>
+          <span class="tab-label">My week</span>
+        </button>
+        <button
+          class=${this.view === 'calculator' ? 'tab active' : 'tab'}
+          data-testid="nav-calculator"
+          @click=${() => {
+            this.view = 'calculator';
+          }}
+        >
+          <span class="tab-icon" aria-hidden="true">${ICON_CALC}</span>
+          <span class="tab-label">Load calc</span>
+        </button>
+      </nav>
     `;
   }
 
@@ -842,6 +866,18 @@ export class GfApp extends LitElement {
         ${this.accountMenuOpen
           ? html`<div class="menu" data-testid="account-menu" role="menu">
               <p class="menu-email" data-testid="account-email">${user.email}</p>
+              <label class="menu-theme">
+                <span>Theme</span>
+                <select data-testid="theme-picker" @change=${this.onThemeChange}>
+                  ${THEMES.map(
+                    (t) =>
+                      html`<option value=${t.id} ?selected=${t.id === this.theme}>
+                        ${t.label}
+                      </option>`,
+                  )}
+                </select>
+              </label>
+              <div class="menu-sep" role="separator"></div>
               ${user.role === 'admin'
                 ? html`<button
                     class="menu-item"
@@ -902,44 +938,46 @@ export class GfApp extends LitElement {
         ${users === null
           ? html`<p>Loading users…</p>`
           : html`
-              <table class="admin-table" data-testid="admin-users">
-                <thead>
-                  <tr>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Status</th>
-                    <th>Plans</th>
-                    <th>Last login</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${users.map(
-                    (u) => html`
-                      <tr data-testid=${`admin-row-${u.id}`}>
-                        <td>${u.email}</td>
-                        <td>${u.role}</td>
-                        <td>
-                          <span class=${u.status === 'active' ? 'pill ok' : 'pill off'}>
-                            ${u.status}
-                          </span>
-                        </td>
-                        <td>${u.planCount}</td>
-                        <td>${u.lastLoginAt === null ? '—' : u.lastLoginAt.slice(0, 10)}</td>
-                        <td>
-                          <button
-                            class="link"
-                            data-testid=${`admin-view-${u.id}`}
-                            @click=${() => void this.openAdminUser(u.id)}
-                          >
-                            View
-                          </button>
-                        </td>
-                      </tr>
-                    `,
-                  )}
-                </tbody>
-              </table>
+              <div class="table-wrap">
+                <table class="admin-table" data-testid="admin-users">
+                  <thead>
+                    <tr>
+                      <th>Email</th>
+                      <th>Role</th>
+                      <th>Status</th>
+                      <th>Plans</th>
+                      <th>Last login</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${users.map(
+                      (u) => html`
+                        <tr data-testid=${`admin-row-${u.id}`}>
+                          <td>${u.email}</td>
+                          <td>${u.role}</td>
+                          <td>
+                            <span class=${u.status === 'active' ? 'pill ok' : 'pill off'}>
+                              ${u.status}
+                            </span>
+                          </td>
+                          <td>${u.planCount}</td>
+                          <td>${u.lastLoginAt === null ? '—' : u.lastLoginAt.slice(0, 10)}</td>
+                          <td>
+                            <button
+                              class="link"
+                              data-testid=${`admin-view-${u.id}`}
+                              @click=${() => void this.openAdminUser(u.id)}
+                            >
+                              View
+                            </button>
+                          </td>
+                        </tr>
+                      `,
+                    )}
+                  </tbody>
+                </table>
+              </div>
             `}
         ${this.adminDetail !== null ? this.renderAdminDetail(this.adminDetail) : nothing}
       </section>
@@ -1374,7 +1412,15 @@ export class GfApp extends LitElement {
       opacity: 0.4;
       cursor: not-allowed;
     }
-    .theme select,
+    .tab-icon {
+      display: none;
+    }
+    .tab-icon svg {
+      width: 22px;
+      height: 22px;
+      display: block;
+    }
+    .menu-theme select,
     .field select,
     .field input,
     .day-head select {
@@ -1389,7 +1435,7 @@ export class GfApp extends LitElement {
         border-color var(--gf-speed) var(--gf-ease),
         box-shadow var(--gf-speed) var(--gf-ease);
     }
-    .theme select:focus-visible,
+    .menu-theme select:focus-visible,
     .field select:focus-visible,
     .field input:focus-visible,
     .day-head select:focus-visible,
@@ -1526,24 +1572,54 @@ export class GfApp extends LitElement {
       .calc-result {
         grid-template-columns: 1fr;
       }
-      /* The topbar can't fit brand + nav + theme + account on one phone row,
-         so wrap the nav onto its own full-width line below. */
-      .topbar {
-        flex-wrap: wrap;
-        row-gap: 8px;
-      }
+      /* Phone layout: the header carries only the brand + account avatar (the
+         theme picker now lives inside the account menu), and the three primary
+         views move into a fixed bottom tab bar that's easy to reach one-handed.
+         z-index stays below the tracker/privacy overlay (20) so modals cover it. */
       .nav {
-        order: 4;
-        width: 100%;
-        margin-left: 0;
-        justify-content: space-between;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 10;
+        margin: 0;
+        gap: 2px;
+        padding: 6px 8px;
+        padding-bottom: calc(6px + env(safe-area-inset-bottom));
+        background: var(--gf-surface);
+        border-top: 1px solid var(--gf-border);
+        box-shadow: 0 -2px 12px rgb(0 0 0 / 8%);
       }
-      .theme {
-        order: 2;
+      .nav .tab {
+        flex: 1 1 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        min-width: 0;
+        min-height: 48px;
+        padding: 6px 4px;
+        font-size: 0.72rem;
+        font-weight: 600;
+      }
+      .nav .tab.active {
+        background: transparent;
+        box-shadow: none;
+        color: var(--gf-accent);
+      }
+      .tab-icon {
+        display: block;
+      }
+      /* With the nav moved to the bottom bar, nothing else in the header uses
+         margin-left:auto, so anchor the account control to the right edge —
+         otherwise its right:0 dropdown opens past the left of the viewport. */
+      .account {
         margin-left: auto;
       }
-      .account {
-        order: 3;
+      /* Leave room so the fixed bottom bar never covers page content. */
+      .content {
+        padding-bottom: calc(84px + env(safe-area-inset-bottom));
       }
       /* Stack each tracker slot so the inputs + done button never overflow
          the sheet width on short exercise names. */
@@ -1969,6 +2045,7 @@ export class GfApp extends LitElement {
       top: calc(100% + 8px);
       z-index: 20;
       min-width: 220px;
+      max-width: calc(100vw - 24px);
       background: var(--gf-surface);
       border: 1px solid var(--gf-border);
       border-radius: var(--gf-radius-sm);
@@ -1982,6 +2059,24 @@ export class GfApp extends LitElement {
       color: var(--gf-muted);
       font-size: 0.85rem;
       word-break: break-all;
+    }
+    .menu-theme {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 4px 10px 8px;
+    }
+    .menu-theme > span {
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--gf-muted);
+    }
+    .menu-sep {
+      height: 1px;
+      margin: 4px 6px;
+      background: var(--gf-border);
     }
     .menu-item {
       appearance: none;
@@ -2002,11 +2097,21 @@ export class GfApp extends LitElement {
     .ghost.danger {
       color: #c0392b;
     }
+    /* Let the multi-column user table scroll sideways inside its panel rather
+       than push the whole page wider than the phone viewport. */
+    .table-wrap {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
     .admin-table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 8px;
       font-size: 0.92rem;
+    }
+    .admin-table th,
+    .admin-table td {
+      white-space: nowrap;
     }
     .admin-table th,
     .admin-table td {
