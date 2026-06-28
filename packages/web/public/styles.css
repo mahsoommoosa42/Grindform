@@ -1,6 +1,10 @@
 /*
  * Global design tokens + theme palettes for Grindform.
  *
+ * The visual language is ported from Quillcast: a paper-beige canvas,
+ * deep-navy "ink" text, and a single rust accent, with Fraunces (serif)
+ * for editorial headings + the wordmark and Manrope (sans) for UI chrome.
+ *
  * Themes are expressed purely as CSS custom properties on the document
  * root, selected by `data-theme` on <html>. Because custom properties
  * pierce shadow boundaries, the Lit components (which render into shadow
@@ -8,69 +12,128 @@
  * theme attribute changes — no per-component theme code required.
  */
 
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400..600&display=swap');
+
+:root {
+  /* Structural tokens shared across every theme. */
+  --gf-font: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --gf-font-script: 'Fraunces', 'Iowan Old Style', Charter, 'Palatino Linotype', Georgia, serif;
+  --gf-font-mono: ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  --gf-radius-sm: 8px;
+  --gf-radius: 12px;
+  --gf-radius-lg: 16px;
+  --gf-radius-pill: 999px;
+  --gf-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --gf-speed: 140ms;
+}
+
+/* Grind — Quillcast "Paper": warm beige canvas, navy ink, rust accent. */
 :root,
 :root[data-theme='grind'] {
-  --gf-font: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  --gf-bg: #0d0f12;
-  --gf-surface: #171a20;
-  --gf-surface-2: #1f242c;
-  --gf-text: #f2f4f7;
-  --gf-muted: #9aa4b2;
-  --gf-accent: #f5c518;
-  --gf-accent-text: #0d0f12;
-  --gf-border: #2a2f38;
-  --gf-success: #36d399;
-  --gf-danger: #f87272;
+  color-scheme: light;
+  --gf-bg: #faf6ee;
+  --gf-surface: #fffdf9;
+  --gf-surface-2: #f5efe6;
+  --gf-hover: #f0ead9;
+  --gf-text: #1b2a4e;
+  --gf-text-soft: #2d3e60;
+  --gf-muted: #6b7280;
+  --gf-faint: #9ca3af;
+  --gf-accent: #d97757;
+  --gf-accent-2: #b85a3e;
+  --gf-accent-tint: #e8a87c;
+  --gf-accent-text: #ffffff;
+  --gf-accent-soft: rgba(217, 119, 87, 0.12);
+  --gf-border: #e5ddc9;
+  --gf-border-soft: #efe8d6;
+  --gf-ring: rgba(217, 119, 87, 0.32);
+  --gf-success: #2f9e6f;
+  --gf-danger: #c0492f;
   --gf-radius: 12px;
-  --gf-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  --gf-shadow-sm: 0 2px 6px rgba(15, 26, 51, 0.06);
+  --gf-shadow: 0 6px 22px rgba(15, 26, 51, 0.1);
+  --gf-shadow-lg: 0 30px 80px rgba(15, 26, 51, 0.16);
 }
 
+/* Girly Pop — a refined rose variant of the paper palette. */
 :root[data-theme='girlypop'] {
-  --gf-font: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  --gf-bg: #fff0f6;
-  --gf-surface: #ffffff;
-  --gf-surface-2: #ffe3ef;
-  --gf-text: #3d2230;
-  --gf-muted: #b5728f;
-  --gf-accent: #ff4fa3;
+  color-scheme: light;
+  --gf-bg: #fff6f4;
+  --gf-surface: #fffdfc;
+  --gf-surface-2: #fcedec;
+  --gf-hover: #fae3e2;
+  --gf-text: #4a2230;
+  --gf-text-soft: #6a3346;
+  --gf-muted: #9b7480;
+  --gf-faint: #c2a2ac;
+  --gf-accent: #d9577e;
+  --gf-accent-2: #b53e62;
+  --gf-accent-tint: #eca0b4;
   --gf-accent-text: #ffffff;
-  --gf-border: #ffc2dd;
-  --gf-success: #1fb6a6;
-  --gf-danger: #e23d6d;
-  --gf-radius: 18px;
-  --gf-shadow: 0 8px 28px rgba(255, 79, 163, 0.25);
+  --gf-accent-soft: rgba(217, 87, 126, 0.12);
+  --gf-border: #f1dcd9;
+  --gf-border-soft: #f7e8e6;
+  --gf-ring: rgba(217, 87, 126, 0.3);
+  --gf-success: #1f9e8f;
+  --gf-danger: #d63d5f;
+  --gf-radius: 14px;
+  --gf-shadow-sm: 0 2px 6px rgba(180, 51, 96, 0.08);
+  --gf-shadow: 0 8px 26px rgba(180, 51, 96, 0.14);
+  --gf-shadow-lg: 0 30px 80px rgba(180, 51, 96, 0.2);
 }
 
+/* Minimal — Quillcast "Light": crisp neutral white, rust accent kept. */
 :root[data-theme='minimal'] {
-  --gf-font: 'Inter', system-ui, -apple-system, sans-serif;
-  --gf-bg: #fafafa;
-  --gf-surface: #ffffff;
-  --gf-surface-2: #f0f0f0;
+  color-scheme: light;
+  --gf-bg: #ffffff;
+  --gf-surface: #fafafa;
+  --gf-surface-2: #f4f4f5;
+  --gf-hover: #ededee;
   --gf-text: #18181b;
-  --gf-muted: #71717a;
-  --gf-accent: #18181b;
+  --gf-text-soft: #3f3f46;
+  --gf-muted: #6b7280;
+  --gf-faint: #a1a1aa;
+  --gf-accent: #d97757;
+  --gf-accent-2: #b85a3e;
+  --gf-accent-tint: #e8a87c;
   --gf-accent-text: #ffffff;
+  --gf-accent-soft: rgba(217, 119, 87, 0.1);
   --gf-border: #e4e4e7;
+  --gf-border-soft: #efeff1;
+  --gf-ring: rgba(217, 119, 87, 0.28);
   --gf-success: #16a34a;
   --gf-danger: #dc2626;
-  --gf-radius: 8px;
-  --gf-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --gf-radius: 10px;
+  --gf-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --gf-shadow: 0 6px 22px rgba(0, 0, 0, 0.08);
+  --gf-shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.14);
 }
 
+/* Midnight — Quillcast "Ink": deep navy nightmode, warm rust pops. */
 :root[data-theme='midnight'] {
-  --gf-font: 'Inter', system-ui, -apple-system, sans-serif;
-  --gf-bg: #0b1020;
-  --gf-surface: #131a2e;
-  --gf-surface-2: #1b2440;
-  --gf-text: #e6ecff;
-  --gf-muted: #8493b8;
-  --gf-accent: #6c8cff;
-  --gf-accent-text: #0b1020;
-  --gf-border: #283353;
+  color-scheme: dark;
+  --gf-bg: #0a1126;
+  --gf-surface: #121c3a;
+  --gf-surface-2: #182648;
+  --gf-hover: #1a2747;
+  --gf-text: #f5efe6;
+  --gf-text-soft: #d6cfc0;
+  --gf-muted: #9ca3af;
+  --gf-faint: #6b7280;
+  --gf-accent: #e8a87c;
+  --gf-accent-2: #f5bfa1;
+  --gf-accent-tint: #f5bfa1;
+  --gf-accent-text: #1b1206;
+  --gf-accent-soft: rgba(232, 168, 124, 0.16);
+  --gf-border: #1f2e55;
+  --gf-border-soft: #15213f;
+  --gf-ring: rgba(232, 168, 124, 0.36);
   --gf-success: #4ade80;
   --gf-danger: #fb7185;
-  --gf-radius: 14px;
-  --gf-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  --gf-radius: 12px;
+  --gf-shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.4);
+  --gf-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --gf-shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.6);
 }
 
 * {
@@ -88,5 +151,10 @@ body {
   background: var(--gf-bg);
   color: var(--gf-text);
   font-family: var(--gf-font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  font-feature-settings: 'liga', 'kern', 'calt';
+  text-rendering: optimizeLegibility;
   -webkit-text-size-adjust: 100%;
 }

@@ -246,6 +246,7 @@ export class GfApp extends LitElement {
         },
         days: this.buildRequest(),
         variation: this.variation,
+        seed: Math.floor(Math.random() * 0x7fffffff),
       });
       this.plan = plan;
       this.progress = {};
@@ -319,7 +320,7 @@ export class GfApp extends LitElement {
       <header class="topbar">
         <div class="brand" data-testid="brand">
           <span class="logo">◣</span>
-          <span>Grindform</span>
+          <span class="wordmark">Grind<em>form</em></span>
         </div>
         <nav class="nav">
           <button
@@ -680,6 +681,10 @@ export class GfApp extends LitElement {
       overflow: hidden;
       clip: rect(0 0 0 0);
     }
+    button:focus-visible {
+      outline: 2px solid var(--gf-accent);
+      outline-offset: 2px;
+    }
     .topbar {
       position: sticky;
       top: 0;
@@ -696,11 +701,19 @@ export class GfApp extends LitElement {
       display: flex;
       align-items: center;
       gap: 8px;
-      font-weight: 800;
-      font-size: 1.15rem;
-      letter-spacing: 0.5px;
+      font-family: var(--gf-font-script);
+      font-weight: 600;
+      font-size: 1.3rem;
+      letter-spacing: -0.01em;
     }
     .logo {
+      color: var(--gf-accent);
+    }
+    .wordmark {
+      font-style: italic;
+    }
+    .wordmark em {
+      font-style: normal;
       color: var(--gf-accent);
     }
     .nav {
@@ -717,12 +730,20 @@ export class GfApp extends LitElement {
       font-weight: 600;
       padding: 10px 14px;
       min-height: 44px;
-      border-radius: var(--gf-radius);
+      border-radius: var(--gf-radius-sm);
       cursor: pointer;
+      transition:
+        background var(--gf-speed) var(--gf-ease),
+        color var(--gf-speed) var(--gf-ease);
+    }
+    .tab:hover:not(:disabled) {
+      color: var(--gf-text);
+      background: var(--gf-hover);
     }
     .tab.active {
       color: var(--gf-text);
       background: var(--gf-surface-2);
+      box-shadow: inset 0 0 0 1px var(--gf-border);
     }
     .tab:disabled {
       opacity: 0.4;
@@ -734,11 +755,23 @@ export class GfApp extends LitElement {
     .day-head select {
       font: inherit;
       color: var(--gf-text);
-      background: var(--gf-surface-2);
+      background: var(--gf-surface);
       border: 1px solid var(--gf-border);
-      border-radius: var(--gf-radius);
+      border-radius: var(--gf-radius-sm);
       padding: 10px 12px;
       min-height: 44px;
+      transition:
+        border-color var(--gf-speed) var(--gf-ease),
+        box-shadow var(--gf-speed) var(--gf-ease);
+    }
+    .theme select:focus-visible,
+    .field select:focus-visible,
+    .field input:focus-visible,
+    .day-head select:focus-visible,
+    .slot-inputs input:focus-visible {
+      outline: none;
+      border-color: var(--gf-accent);
+      box-shadow: 0 0 0 3px var(--gf-ring);
     }
     .content {
       max-width: 1080px;
@@ -749,13 +782,16 @@ export class GfApp extends LitElement {
     .panel {
       background: var(--gf-surface);
       border: 1px solid var(--gf-border);
-      border-radius: var(--gf-radius);
-      padding: 20px;
-      box-shadow: var(--gf-shadow);
+      border-radius: var(--gf-radius-lg);
+      padding: 22px;
+      box-shadow: var(--gf-shadow-sm);
     }
     h1 {
       margin: 0 0 6px;
-      font-size: 1.5rem;
+      font-family: var(--gf-font-script);
+      font-weight: 600;
+      font-size: 1.7rem;
+      letter-spacing: -0.015em;
     }
     .lede {
       color: var(--gf-muted);
@@ -774,6 +810,13 @@ export class GfApp extends LitElement {
       font-weight: 600;
       font-size: 0.9rem;
     }
+    .field > span {
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--gf-muted);
+    }
     .block {
       border: 1px solid var(--gf-border);
       border-radius: var(--gf-radius);
@@ -782,7 +825,11 @@ export class GfApp extends LitElement {
     }
     legend {
       padding: 0 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-size: 0.72rem;
       font-weight: 700;
+      color: var(--gf-muted);
     }
     .chips {
       display: flex;
@@ -792,18 +839,31 @@ export class GfApp extends LitElement {
     .chip {
       appearance: none;
       font: inherit;
+      font-weight: 600;
       cursor: pointer;
       border: 1px solid var(--gf-border);
-      background: var(--gf-surface-2);
-      color: var(--gf-muted);
-      border-radius: 999px;
+      background: var(--gf-surface);
+      color: var(--gf-text-soft);
+      border-radius: var(--gf-radius-pill);
       padding: 8px 14px;
       min-height: 40px;
+      transition:
+        background var(--gf-speed) var(--gf-ease),
+        color var(--gf-speed) var(--gf-ease),
+        border-color var(--gf-speed) var(--gf-ease);
+    }
+    .chip:hover {
+      border-color: var(--gf-accent);
+      color: var(--gf-text);
     }
     .chip.on {
       background: var(--gf-accent);
       color: var(--gf-accent-text);
       border-color: var(--gf-accent);
+    }
+    .chip.on:hover {
+      background: var(--gf-accent-2);
+      color: var(--gf-accent-text);
     }
     .chips.small .chip {
       font-size: 0.82rem;
@@ -835,18 +895,31 @@ export class GfApp extends LitElement {
       appearance: none;
       width: 100%;
       font: inherit;
-      font-weight: 800;
-      font-size: 1.05rem;
+      font-weight: 700;
+      font-size: 1.02rem;
       cursor: pointer;
       border: none;
-      border-radius: var(--gf-radius);
+      border-radius: var(--gf-radius-sm);
       padding: 16px;
       min-height: 52px;
-      background: var(--gf-accent);
-      color: var(--gf-accent-text);
+      background: var(--gf-text);
+      color: var(--gf-bg);
+      box-shadow: var(--gf-shadow-sm);
+      transition:
+        transform var(--gf-speed) var(--gf-ease),
+        opacity var(--gf-speed) var(--gf-ease),
+        box-shadow var(--gf-speed) var(--gf-ease);
+    }
+    .cta:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: var(--gf-shadow);
+    }
+    .cta:active:not(:disabled) {
+      transform: translateY(0);
     }
     .cta:disabled {
-      opacity: 0.6;
+      opacity: 0.5;
+      cursor: not-allowed;
     }
     .banner.error {
       background: color-mix(in srgb, var(--gf-danger) 18%, var(--gf-surface));
@@ -869,13 +942,21 @@ export class GfApp extends LitElement {
       gap: 12px;
     }
     .card {
-      background: var(--gf-surface-2);
+      background: var(--gf-surface);
       border: 1px solid var(--gf-border);
       border-radius: var(--gf-radius);
-      padding: 14px;
+      padding: 16px;
       display: flex;
       flex-direction: column;
       gap: 8px;
+      box-shadow: var(--gf-shadow-sm);
+      transition:
+        transform var(--gf-speed) var(--gf-ease),
+        box-shadow var(--gf-speed) var(--gf-ease);
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--gf-shadow);
     }
     .card.blocked {
       opacity: 0.85;
@@ -888,11 +969,15 @@ export class GfApp extends LitElement {
     }
     .card-head h2 {
       margin: 0;
-      font-size: 1.05rem;
+      font-family: var(--gf-font-script);
+      font-weight: 600;
+      font-size: 1.15rem;
+      letter-spacing: -0.01em;
     }
     .mins {
       color: var(--gf-muted);
-      font-size: 0.85rem;
+      font-family: var(--gf-font-mono);
+      font-size: 0.78rem;
     }
     .activity {
       font-weight: 700;
@@ -938,14 +1023,25 @@ export class GfApp extends LitElement {
     .ghost {
       appearance: none;
       font: inherit;
-      font-weight: 700;
+      font-weight: 600;
       cursor: pointer;
       background: transparent;
       color: var(--gf-text);
       border: 1px solid var(--gf-border);
-      border-radius: var(--gf-radius);
+      border-radius: var(--gf-radius-sm);
       padding: 10px 14px;
       min-height: 44px;
+      transition:
+        background var(--gf-speed) var(--gf-ease),
+        border-color var(--gf-speed) var(--gf-ease),
+        transform var(--gf-speed) var(--gf-ease);
+    }
+    .ghost:hover {
+      background: var(--gf-hover);
+      border-color: var(--gf-text-soft);
+    }
+    .ghost:active {
+      transform: translateY(1px);
     }
     .ghost.full {
       width: 100%;
@@ -953,7 +1049,8 @@ export class GfApp extends LitElement {
     .overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.5);
+      background: rgba(8, 8, 10, 0.5);
+      backdrop-filter: blur(3px);
       display: flex;
       align-items: flex-end;
       justify-content: center;
@@ -964,16 +1061,17 @@ export class GfApp extends LitElement {
       width: min(640px, 100%);
       max-height: 90vh;
       overflow: auto;
-      border-radius: var(--gf-radius) var(--gf-radius) 0 0;
+      border-radius: var(--gf-radius-lg) var(--gf-radius-lg) 0 0;
       padding: 18px;
       padding-bottom: calc(18px + env(safe-area-inset-bottom));
+      box-shadow: var(--gf-shadow-lg);
     }
     @media (min-width: 720px) {
       .overlay {
         align-items: center;
       }
       .sheet {
-        border-radius: var(--gf-radius);
+        border-radius: var(--gf-radius-lg);
       }
     }
     .sheet-head {
@@ -984,6 +1082,9 @@ export class GfApp extends LitElement {
     }
     .sheet-head h2 {
       margin: 0;
+      font-family: var(--gf-font-script);
+      font-weight: 600;
+      letter-spacing: -0.01em;
     }
     .icon {
       appearance: none;
@@ -991,10 +1092,17 @@ export class GfApp extends LitElement {
       background: var(--gf-surface-2);
       border: 1px solid var(--gf-border);
       color: var(--gf-text);
-      border-radius: 999px;
+      border-radius: var(--gf-radius-pill);
       width: 44px;
       height: 44px;
       font-size: 1rem;
+      transition:
+        background var(--gf-speed) var(--gf-ease),
+        color var(--gf-speed) var(--gf-ease);
+    }
+    .icon:hover {
+      background: var(--gf-hover);
+      color: var(--gf-accent);
     }
     .pct {
       color: var(--gf-muted);
@@ -1005,7 +1113,11 @@ export class GfApp extends LitElement {
     }
     .track-block h3 {
       margin: 0 0 8px;
-      font-size: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--gf-muted);
     }
     .note {
       color: var(--gf-muted);
@@ -1043,11 +1155,14 @@ export class GfApp extends LitElement {
       width: 72px;
       font: inherit;
       color: var(--gf-text);
-      background: var(--gf-surface-2);
+      background: var(--gf-surface);
       border: 1px solid var(--gf-border);
-      border-radius: var(--gf-radius);
+      border-radius: var(--gf-radius-sm);
       padding: 8px;
       min-height: 44px;
+      transition:
+        border-color var(--gf-speed) var(--gf-ease),
+        box-shadow var(--gf-speed) var(--gf-ease);
     }
     .done-btn {
       appearance: none;
@@ -1057,9 +1172,16 @@ export class GfApp extends LitElement {
       background: var(--gf-accent);
       color: var(--gf-accent-text);
       border: none;
-      border-radius: var(--gf-radius);
+      border-radius: var(--gf-radius-sm);
       padding: 10px 12px;
       min-height: 44px;
+      transition:
+        background var(--gf-speed) var(--gf-ease),
+        transform var(--gf-speed) var(--gf-ease);
+    }
+    .done-btn:hover:not(:disabled) {
+      background: var(--gf-accent-2);
+      transform: translateY(-1px);
     }
     .done-btn:disabled {
       opacity: 0.6;
