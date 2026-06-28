@@ -56,31 +56,31 @@
   --gf-shadow-lg: 0 28px 70px rgba(20, 20, 25, 0.16);
 }
 
-/* Grind — Quillcast "Paper": warm beige canvas, navy ink, rust accent. */
+/* Grind — true grind mode: matte black canvas, high-contrast ink, blood-red. */
 :root[data-theme='grind'] {
-  color-scheme: light;
-  --gf-bg: #faf6ee;
-  --gf-surface: #fffdf9;
-  --gf-surface-2: #f5efe6;
-  --gf-hover: #f0ead9;
-  --gf-text: #1b2a4e;
-  --gf-text-soft: #2d3e60;
-  --gf-muted: #6b7280;
-  --gf-faint: #9ca3af;
-  --gf-accent: #d97757;
-  --gf-accent-2: #b85a3e;
-  --gf-accent-tint: #e8a87c;
+  color-scheme: dark;
+  --gf-bg: #0b0b0c;
+  --gf-surface: #161617;
+  --gf-surface-2: #1d1d1f;
+  --gf-hover: #262629;
+  --gf-text: #f7f7f8;
+  --gf-text-soft: #cdcdd2;
+  --gf-muted: #8c8c95;
+  --gf-faint: #5a5a62;
+  --gf-accent: #ff2d2d;
+  --gf-accent-2: #d31616;
+  --gf-accent-tint: #ff6363;
   --gf-accent-text: #ffffff;
-  --gf-accent-soft: rgba(217, 119, 87, 0.12);
-  --gf-border: #e5ddc9;
-  --gf-border-soft: #efe8d6;
-  --gf-ring: rgba(217, 119, 87, 0.32);
-  --gf-success: #2f9e6f;
-  --gf-danger: #c0492f;
+  --gf-accent-soft: rgba(255, 45, 45, 0.14);
+  --gf-border: #2b2b2f;
+  --gf-border-soft: #1f1f22;
+  --gf-ring: rgba(255, 45, 45, 0.4);
+  --gf-success: #36d399;
+  --gf-danger: #ff4d4d;
   --gf-radius: 12px;
-  --gf-shadow-sm: 0 2px 6px rgba(15, 26, 51, 0.06);
-  --gf-shadow: 0 6px 22px rgba(15, 26, 51, 0.1);
-  --gf-shadow-lg: 0 30px 80px rgba(15, 26, 51, 0.16);
+  --gf-shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.5);
+  --gf-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  --gf-shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.7);
 }
 
 /* Girly Pop — a refined rose variant of the paper palette. */
@@ -135,33 +135,6 @@
   --gf-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
   --gf-shadow: 0 6px 22px rgba(0, 0, 0, 0.08);
   --gf-shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.14);
-}
-
-/* Midnight — Quillcast "Ink": deep navy nightmode, warm rust pops. */
-:root[data-theme='midnight'] {
-  color-scheme: dark;
-  --gf-bg: #0a1126;
-  --gf-surface: #121c3a;
-  --gf-surface-2: #182648;
-  --gf-hover: #1a2747;
-  --gf-text: #f5efe6;
-  --gf-text-soft: #d6cfc0;
-  --gf-muted: #9ca3af;
-  --gf-faint: #6b7280;
-  --gf-accent: #e8a87c;
-  --gf-accent-2: #f5bfa1;
-  --gf-accent-tint: #f5bfa1;
-  --gf-accent-text: #1b1206;
-  --gf-accent-soft: rgba(232, 168, 124, 0.16);
-  --gf-border: #1f2e55;
-  --gf-border-soft: #15213f;
-  --gf-ring: rgba(232, 168, 124, 0.36);
-  --gf-success: #4ade80;
-  --gf-danger: #fb7185;
-  --gf-radius: 12px;
-  --gf-shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.4);
-  --gf-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  --gf-shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.6);
 }
 
 * {

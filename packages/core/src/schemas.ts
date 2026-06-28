@@ -107,8 +107,8 @@ export type DayActivity = z.infer<typeof DayActivitySchema>;
 // Themes.
 // ---------------------------------------------------------------------------
 
-/** Visual themes. `pulse` (white/red) is the default; `grind` and `girlypop` are alternates. */
-export const ThemeIdSchema = z.enum(['pulse', 'grind', 'girlypop', 'minimal', 'midnight']);
+/** Visual themes. `pulse` (white/red) is the default; `grind` (dark) and `girlypop` are alternates. */
+export const ThemeIdSchema = z.enum(['pulse', 'grind', 'girlypop', 'minimal']);
 export type ThemeId = z.infer<typeof ThemeIdSchema>;
 
 // ---------------------------------------------------------------------------

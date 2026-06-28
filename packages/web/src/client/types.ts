@@ -9,7 +9,7 @@
 
 export type Goal = 'build_muscle' | 'lose_fat' | 'build_endurance' | 'recomp';
 export type Experience = 'beginner' | 'intermediate' | 'advanced';
-export type ThemeId = 'pulse' | 'grind' | 'girlypop' | 'minimal' | 'midnight';
+export type ThemeId = 'pulse' | 'grind' | 'girlypop' | 'minimal';
 export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 export type DayActivity = 'rest' | 'pilates' | 'physio' | 'steps' | 'custom';
 export type Equipment =

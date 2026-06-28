@@ -10,7 +10,7 @@ import { expect, test } from '@playwright/test';
 
 import { openApp } from './helpers.ts';
 
-const THEMES = ['pulse', 'grind', 'girlypop', 'minimal', 'midnight'] as const;
+const THEMES = ['pulse', 'grind', 'girlypop', 'minimal'] as const;
 
 test.beforeEach(async ({ page }) => {
   await openApp(page);

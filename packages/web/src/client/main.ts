@@ -39,10 +39,9 @@ import type {
 
 const THEMES: readonly { id: ThemeId; label: string }[] = [
   { id: 'pulse', label: 'Pulse' },
-  { id: 'grind', label: 'Grind Mindset' },
+  { id: 'grind', label: 'Grind' },
   { id: 'girlypop', label: 'Girly Pop' },
   { id: 'minimal', label: 'Minimal' },
-  { id: 'midnight', label: 'Midnight' },
 ];
 
 const GOALS: readonly { id: Goal; label: string }[] = [
