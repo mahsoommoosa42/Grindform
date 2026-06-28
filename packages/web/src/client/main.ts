@@ -1526,6 +1526,39 @@ export class GfApp extends LitElement {
       .calc-result {
         grid-template-columns: 1fr;
       }
+      /* The topbar can't fit brand + nav + theme + account on one phone row,
+         so wrap the nav onto its own full-width line below. */
+      .topbar {
+        flex-wrap: wrap;
+        row-gap: 8px;
+      }
+      .nav {
+        order: 4;
+        width: 100%;
+        margin-left: 0;
+        justify-content: space-between;
+      }
+      .theme {
+        order: 2;
+        margin-left: auto;
+      }
+      .account {
+        order: 3;
+      }
+      /* Stack each tracker slot so the inputs + done button never overflow
+         the sheet width on short exercise names. */
+      .slot {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .slot-inputs {
+        width: 100%;
+      }
+      .slot-inputs input {
+        flex: 1 1 0;
+        width: auto;
+        min-width: 0;
+      }
     }
     .calc-headline,
     .calc-prescription {

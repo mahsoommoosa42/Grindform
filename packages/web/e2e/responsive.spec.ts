@@ -9,8 +9,20 @@
  */
 
 import { expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
-import { generatePlan, hasTouch, openApp } from './helpers.ts';
+import { generatePlan, hasTouch, openApp, tapOrClick } from './helpers.ts';
+
+/** Assert an element's right edge stays within the viewport (no horizontal overflow). */
+const expectWithinViewport = async (page: Page, target: Locator): Promise<void> => {
+  const viewport = page.viewportSize();
+  const box = await target.boundingBox();
+  expect(box).not.toBeNull();
+  if (box !== null && viewport !== null) {
+    // Allow a sub-pixel rounding tolerance.
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+  }
+};
 
 test('core flow works at the current viewport', async ({ page }) => {
   await openApp(page);
@@ -27,6 +39,21 @@ test('primary call-to-action fits the viewport width', async ({ page }) => {
   if (box !== null && viewport !== null) {
     expect(box.width).toBeLessThanOrEqual(viewport.width);
   }
+});
+
+test('the account control stays within the viewport width', async ({ page }) => {
+  await openApp(page);
+  await expectWithinViewport(page, page.getByTestId('account-button'));
+});
+
+test('tracker action buttons stay within the viewport width', async ({ page }) => {
+  await openApp(page);
+  await generatePlan(page);
+  await tapOrClick(page, 'track-mon');
+  await expect(page.getByTestId('tracker')).toBeVisible();
+  const slot = page.locator('[data-testid^="slot-"]').first();
+  const id = ((await slot.getAttribute('data-testid')) as string).replace('slot-', '');
+  await expectWithinViewport(page, page.getByTestId(`complete-${id}`));
 });
 
 test('tap targets are at least 44px tall on touch devices', async ({ page }) => {
