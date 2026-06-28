@@ -1993,12 +1993,11 @@ export class GfApp extends LitElement {
       .content {
         padding-bottom: calc(84px + env(safe-area-inset-bottom));
       }
-      /* Let set-row inputs flex to fill the sheet width on phones so the
-         log button is never pushed off the right edge. */
-      .set-row input {
-        flex: 1 1 0;
-        width: auto;
-        min-width: 0;
+      /* The set-row grid already keeps the log button inside the sheet at 430px;
+         tighten the gap and label/button tracks so the inputs get more room. */
+      .set-row {
+        grid-template-columns: 2.25rem minmax(0, 1fr) auto minmax(0, 1fr) 4rem;
+        gap: 6px;
       }
     }
     .calc-headline,
@@ -2293,8 +2292,9 @@ export class GfApp extends LitElement {
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.06em;
-      color: var(--gf-accent);
-      background: var(--gf-accent-soft);
+      color: var(--gf-text);
+      background: var(--gf-highlight-soft);
+      border: 1px solid var(--gf-highlight);
       border-radius: 999px;
       padding: 2px 8px;
     }
@@ -2333,17 +2333,20 @@ export class GfApp extends LitElement {
       flex-direction: column;
       gap: 6px;
     }
+    /* A fixed grid keeps every set row's columns aligned regardless of label,
+       value, or button-text width: [label] [kg] [×] [reps] [log]. minmax(0,1fr)
+       lets the kg/reps inputs shrink without overflowing the sheet at 430px. */
     .set-row {
-      display: flex;
+      display: grid;
+      grid-template-columns: 2.75rem minmax(0, 1fr) auto minmax(0, 1fr) 4.5rem;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
     }
     .set-row.done {
       opacity: 0.7;
     }
     .set-label {
-      flex: 0 0 auto;
-      min-width: 44px;
+      justify-self: start;
       font-size: 0.74rem;
       font-weight: 700;
       color: var(--gf-muted);
@@ -2351,11 +2354,15 @@ export class GfApp extends LitElement {
     .set-label.warmup {
       color: var(--gf-accent-2);
     }
+    .set-row .times {
+      justify-self: center;
+    }
     .set-row .done-btn {
-      margin-left: auto;
+      width: 100%;
     }
     .volume {
       border: 1px solid var(--gf-border);
+      border-left: 4px solid var(--gf-highlight);
       border-radius: var(--gf-radius);
       padding: 12px 14px;
       margin-top: 12px;
@@ -2367,7 +2374,7 @@ export class GfApp extends LitElement {
       letter-spacing: 0.1em;
       font-size: 0.72rem;
       font-weight: 700;
-      color: var(--gf-muted);
+      color: var(--gf-accent);
     }
     .volume-total {
       margin: 0 0 8px;
@@ -2407,6 +2414,11 @@ export class GfApp extends LitElement {
     }
     .slot-opts input[type='number'] {
       width: 56px;
+    }
+    /* In the grid the kg/reps inputs fill their tracks instead of a fixed width. */
+    .set-row input {
+      width: 100%;
+      min-width: 0;
     }
     .done-btn {
       appearance: none;
