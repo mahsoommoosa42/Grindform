@@ -22,6 +22,7 @@ import {
   findUserById,
   lastActivityFor,
   listUsersWithStats,
+  setUserRole,
   setUserStatus,
   touchLastLogin,
 } from '../src/repos/users-repo.ts';
@@ -91,6 +92,14 @@ describe('users-repo', () => {
     const disabled = await setUserStatus(db, user.id, 'disabled');
     expect(disabled?.status).toBe('disabled');
     expect(await setUserStatus(db, newUserId(), 'disabled')).toBeUndefined();
+  });
+
+  it('updates a role and reports undefined for an unknown id', async () => {
+    const user = await createUser(db, seed('promote@example.com'));
+    const promoted = await setUserRole(db, user.id, 'admin');
+    expect(promoted?.role).toBe('admin');
+    expect((await findUserById(db, user.id))?.role).toBe('admin');
+    expect(await setUserRole(db, newUserId(), 'admin')).toBeUndefined();
   });
 
   it('lists users with a plan count, newest first', async () => {

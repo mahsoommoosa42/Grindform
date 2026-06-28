@@ -320,7 +320,7 @@ describe('Grindform API', () => {
       const res = await client.request('/v1/settings');
       expect(res.status).toBe(200);
       const body = (await res.json()) as { settings: { theme: string } };
-      expect(body.settings.theme).toBe('grind');
+      expect(body.settings.theme).toBe('pulse');
     });
 
     it('updates and reads back settings', async () => {

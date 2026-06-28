@@ -1,9 +1,10 @@
 /*
  * Global design tokens + theme palettes for Grindform.
  *
- * The visual language is ported from Quillcast: a paper-beige canvas,
- * deep-navy "ink" text, and a single rust accent, with Fraunces (serif)
- * for editorial headings + the wordmark and Manrope (sans) for UI chrome.
+ * The default look is "Pulse": a crisp white canvas, near-black ink, and a
+ * single deep-red accent — a clean, energetic identity that suits a fitness
+ * product. Fraunces (serif) carries the wordmark + editorial headings and
+ * Manrope (sans) the UI chrome. Three alternate palettes ship alongside it.
  *
  * Themes are expressed purely as CSS custom properties on the document
  * root, selected by `data-theme` on <html>. Because custom properties
@@ -27,8 +28,35 @@
   --gf-speed: 140ms;
 }
 
-/* Grind — Quillcast "Paper": warm beige canvas, navy ink, rust accent. */
+/* Pulse — the default: white canvas, near-black ink, deep-red accent. */
 :root,
+:root[data-theme='pulse'] {
+  color-scheme: light;
+  --gf-bg: #ffffff;
+  --gf-surface: #ffffff;
+  --gf-surface-2: #f6f6f7;
+  --gf-hover: #efeff1;
+  --gf-text: #16161a;
+  --gf-text-soft: #3a3a40;
+  --gf-muted: #6b7280;
+  --gf-faint: #a1a1aa;
+  --gf-accent: #c81e1e;
+  --gf-accent-2: #a31616;
+  --gf-accent-tint: #e25b5b;
+  --gf-accent-text: #ffffff;
+  --gf-accent-soft: rgba(200, 30, 30, 0.1);
+  --gf-border: #e6e6e9;
+  --gf-border-soft: #f0f0f2;
+  --gf-ring: rgba(200, 30, 30, 0.3);
+  --gf-success: #16a34a;
+  --gf-danger: #c81e1e;
+  --gf-radius: 12px;
+  --gf-shadow-sm: 0 1px 2px rgba(20, 20, 25, 0.06);
+  --gf-shadow: 0 6px 22px rgba(20, 20, 25, 0.09);
+  --gf-shadow-lg: 0 28px 70px rgba(20, 20, 25, 0.16);
+}
+
+/* Grind — Quillcast "Paper": warm beige canvas, navy ink, rust accent. */
 :root[data-theme='grind'] {
   color-scheme: light;
   --gf-bg: #faf6ee;

@@ -10,7 +10,7 @@
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
 
-import { createApp } from '@grindform/api';
+import { createApp, seedAdminUser } from '@grindform/api';
 import { parseAdminEmails } from '@grindform/auth';
 
 import { createServerDb } from './db.ts';
@@ -18,7 +18,24 @@ import { createServerDb } from './db.ts';
 const { db } = await createServerDb();
 
 // Emails in ADMIN_EMAILS get the admin role (and the /admin console) on signup.
-const adminEmails = parseAdminEmails(process.env.ADMIN_EMAILS);
+const adminEmails = new Set(parseAdminEmails(process.env.ADMIN_EMAILS));
+
+// Bootstrap admin: seed (or promote) a known admin account from secrets so a
+// fresh deploy always has a way into the support console without opening
+// self-registration. The email is also added to the allowlist so that, if the
+// account is ever deleted and re-created, it keeps the admin role.
+const bootstrapEmail = process.env.GRINDFORM_ADMIN_EMAIL?.trim().toLowerCase();
+const bootstrapPassword = process.env.GRINDFORM_ADMIN_PASSWORD;
+if (bootstrapEmail !== undefined && bootstrapEmail.length > 0 && bootstrapPassword) {
+  adminEmails.add(bootstrapEmail);
+  const outcome = await seedAdminUser({ db, email: bootstrapEmail, password: bootstrapPassword });
+  // eslint-disable-next-line no-console
+  console.log(`Bootstrap admin ${outcome.action}: ${outcome.user.email}`);
+} else if (bootstrapEmail !== undefined || bootstrapPassword !== undefined) {
+  console.warn(
+    'Skipping admin bootstrap: set BOTH GRINDFORM_ADMIN_EMAIL and GRINDFORM_ADMIN_PASSWORD.',
+  );
+}
 // Session cookies are Secure unless explicitly disabled for local HTTP dev.
 const secureCookies = process.env.GRINDFORM_INSECURE_COOKIES !== '1';
 // Per-IP throttle on the auth endpoints; overridable so the e2e harness (which

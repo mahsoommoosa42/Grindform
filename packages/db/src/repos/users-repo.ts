@@ -95,6 +95,24 @@ export const setUserStatus = async (
   return row;
 };
 
+/**
+ * Set an account's role (member/admin). Returns the updated row, or
+ * `undefined` if no such account exists. Used by the admin bootstrap to
+ * promote a pre-existing account to admin.
+ */
+export const setUserRole = async (
+  db: DbOrTx,
+  id: UserId,
+  role: User['role'],
+): Promise<User | undefined> => {
+  const [row] = await db
+    .update(users)
+    .set({ role, updatedAt: new Date() })
+    .where(eq(users.id, id))
+    .returning();
+  return row;
+};
+
 /** List every account with a plan count, newest first. For the admin console. */
 export const listUsersWithStats = async (db: DbOrTx): Promise<readonly UserWithStats[]> => {
   const rows = await db

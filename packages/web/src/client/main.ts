@@ -15,6 +15,9 @@
 import { css, html, LitElement, nothing } from 'lit';
 import type { TemplateResult } from 'lit';
 
+import { GOAL_PROFILES, prescribeLoad } from '@grindform/loadcalc';
+import type { LoadGoal, Prescription } from '@grindform/loadcalc';
+
 import * as api from './api.ts';
 import { ApiError } from './api.ts';
 import type {
@@ -35,6 +38,7 @@ import type {
 } from './types.ts';
 
 const THEMES: readonly { id: ThemeId; label: string }[] = [
+  { id: 'pulse', label: 'Pulse' },
   { id: 'grind', label: 'Grind Mindset' },
   { id: 'girlypop', label: 'Girly Pop' },
   { id: 'minimal', label: 'Minimal' },
@@ -140,6 +144,10 @@ export class GfApp extends LitElement {
     progress: { state: true },
     busy: { state: true },
     error: { state: true },
+    calcExercise: { state: true },
+    calcWeight: { state: true },
+    calcReps: { state: true },
+    calcGoal: { state: true },
   };
 
   declare authStatus: 'loading' | 'auth' | 'ready';
@@ -156,7 +164,7 @@ export class GfApp extends LitElement {
   declare adminDetail: { user: PublicUser; audit: AuditRow[] } | null;
   declare adminError: string | null;
   declare theme: ThemeId;
-  declare view: 'generate' | 'week' | 'admin';
+  declare view: 'generate' | 'week' | 'admin' | 'calculator';
   declare goal: Goal;
   declare experience: Experience;
   declare equipment: Equipment[];
@@ -171,6 +179,11 @@ export class GfApp extends LitElement {
   declare progress: Record<string, DayProgress>;
   declare busy: boolean;
   declare error: string | null;
+  /** Load-calculator inputs (client-side only; never persisted). */
+  declare calcExercise: string;
+  declare calcWeight: number;
+  declare calcReps: number;
+  declare calcGoal: LoadGoal;
 
   /** Transient per-slot tracker inputs; not reactive (read on submit). */
   private slotInputs: Record<string, { loadKg?: number; reps?: number }> = {};
@@ -206,6 +219,10 @@ export class GfApp extends LitElement {
     this.progress = {};
     this.busy = false;
     this.error = null;
+    this.calcExercise = '';
+    this.calcWeight = 60;
+    this.calcReps = 8;
+    this.calcGoal = 'hypertrophy';
   }
 
   override connectedCallback(): void {
@@ -524,7 +541,112 @@ export class GfApp extends LitElement {
   private renderMain(): TemplateResult {
     if (this.view === 'admin') return this.renderAdmin();
     if (this.view === 'week') return this.renderWeek();
+    if (this.view === 'calculator') return this.renderCalculator();
     return this.renderGenerator();
+  }
+
+  /** Compute the prescription for the current inputs, or null if invalid. */
+  private get prescription(): Prescription | null {
+    if (!Number.isFinite(this.calcWeight) || this.calcWeight <= 0) return null;
+    if (!Number.isInteger(this.calcReps) || this.calcReps < 1) return null;
+    return prescribeLoad({ weight: this.calcWeight, reps: this.calcReps, goal: this.calcGoal });
+  }
+
+  private renderCalculator(): TemplateResult {
+    const rx = this.prescription;
+    return html`
+      <section class="panel" data-testid="calculator">
+        <h1>Load calculator</h1>
+        <p class="lede">
+          Enter a recent set and your goal. Grindform estimates your one-rep max (Epley) and
+          prescribes a working weight, rep range and sets to match.
+        </p>
+
+        <div class="grid">
+          <label class="field">
+            <span>Exercise (optional)</span>
+            <input
+              type="text"
+              data-testid="calc-exercise"
+              placeholder="e.g. Back squat"
+              .value=${this.calcExercise}
+              @input=${(e: Event) => {
+                this.calcExercise = (e.target as HTMLInputElement).value;
+              }}
+            />
+          </label>
+          <label class="field">
+            <span>Weight lifted (kg)</span>
+            <input
+              type="number"
+              inputmode="decimal"
+              min="1"
+              step="2.5"
+              data-testid="calc-weight"
+              .value=${String(this.calcWeight)}
+              @input=${(e: Event) => {
+                this.calcWeight = Number((e.target as HTMLInputElement).value);
+              }}
+            />
+          </label>
+          <label class="field">
+            <span>Reps completed</span>
+            <input
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="30"
+              step="1"
+              data-testid="calc-reps"
+              .value=${String(this.calcReps)}
+              @input=${(e: Event) => {
+                this.calcReps = Number((e.target as HTMLInputElement).value);
+              }}
+            />
+          </label>
+          <label class="field">
+            <span>Goal</span>
+            <select
+              data-testid="calc-goal"
+              @change=${(e: Event) => {
+                this.calcGoal = (e.target as HTMLSelectElement).value as LoadGoal;
+              }}
+            >
+              ${GOAL_PROFILES.map(
+                (p) =>
+                  html`<option value=${p.goal} ?selected=${p.goal === this.calcGoal}>
+                    ${p.label}
+                  </option>`,
+              )}
+            </select>
+          </label>
+        </div>
+
+        ${rx === null
+          ? html`<p class="blocked-note" data-testid="calc-invalid">
+              Enter a positive weight and a whole number of reps (1 or more).
+            </p>`
+          : html`
+              <div class="calc-result" data-testid="calc-result">
+                <div class="calc-headline">
+                  <span class="calc-label">Estimated 1RM</span>
+                  <strong data-testid="calc-onerm">${rx.oneRepMax} kg</strong>
+                </div>
+                <div class="calc-prescription">
+                  <span class="calc-label">
+                    ${this.calcExercise.trim() === '' ? 'Working set' : this.calcExercise.trim()}
+                  </span>
+                  <strong data-testid="calc-prescription">
+                    ${rx.sets} × ${rx.repsLow}–${rx.repsHigh} reps @ ${rx.workingWeight} kg
+                  </strong>
+                  <span class="calc-note" data-testid="calc-intensity">
+                    ${rx.intensityPct}% of 1RM
+                  </span>
+                </div>
+              </div>
+            `}
+      </section>
+    `;
   }
 
   private renderAuth(): TemplateResult {
@@ -677,6 +799,15 @@ export class GfApp extends LitElement {
             }}
           >
             My week
+          </button>
+          <button
+            class=${this.view === 'calculator' ? 'tab active' : 'tab'}
+            data-testid="nav-calculator"
+            @click=${() => {
+              this.view = 'calculator';
+            }}
+          >
+            Load calc
           </button>
         </nav>
         <label class="theme">
@@ -1386,6 +1517,49 @@ export class GfApp extends LitElement {
       margin: 4px 0 0;
       font-size: 0.9rem;
     }
+    .calc-result {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 18px;
+    }
+    @media (max-width: 560px) {
+      .calc-result {
+        grid-template-columns: 1fr;
+      }
+    }
+    .calc-headline,
+    .calc-prescription {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 16px;
+      border: 1px solid var(--gf-border);
+      border-radius: var(--gf-radius);
+      background: var(--gf-surface-2);
+    }
+    .calc-prescription {
+      border-color: var(--gf-accent);
+      background: var(--gf-accent-soft);
+    }
+    .calc-label {
+      color: var(--gf-muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .calc-headline strong {
+      font-size: 1.9rem;
+      letter-spacing: -0.02em;
+    }
+    .calc-prescription strong {
+      font-size: 1.25rem;
+      color: var(--gf-accent);
+    }
+    .calc-note {
+      color: var(--gf-muted);
+      font-size: 0.85rem;
+    }
     .cta {
       appearance: none;
       width: 100%;
@@ -1873,13 +2047,13 @@ export class GfApp extends LitElement {
 function readInitialTheme(): ThemeId {
   try {
     const saved = localStorage.getItem('gf-theme');
-    if (saved === 'grind' || saved === 'girlypop' || saved === 'minimal' || saved === 'midnight') {
-      return saved;
+    if (THEMES.some((t) => t.id === saved)) {
+      return saved as ThemeId;
     }
   } catch {
     /* ignore */
   }
-  return 'grind';
+  return 'pulse';
 }
 
 customElements.define('gf-app', GfApp);

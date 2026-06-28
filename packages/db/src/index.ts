@@ -33,6 +33,7 @@ export {
   findUserById,
   lastActivityFor,
   listUsersWithStats,
+  setUserRole,
   setUserStatus,
   touchLastLogin,
 } from './repos/users-repo.ts';

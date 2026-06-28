@@ -107,8 +107,8 @@ export type DayActivity = z.infer<typeof DayActivitySchema>;
 // Themes.
 // ---------------------------------------------------------------------------
 
-/** Visual themes. `grind` and `girlypop` are the two headline looks. */
-export const ThemeIdSchema = z.enum(['grind', 'girlypop', 'minimal', 'midnight']);
+/** Visual themes. `pulse` (white/red) is the default; `grind` and `girlypop` are alternates. */
+export const ThemeIdSchema = z.enum(['pulse', 'grind', 'girlypop', 'minimal', 'midnight']);
 export type ThemeId = z.infer<typeof ThemeIdSchema>;
 
 // ---------------------------------------------------------------------------
@@ -284,5 +284,6 @@ export const AuditActionSchema = z.enum([
   'admin.user.disable',
   'admin.user.enable',
   'admin.user.delete',
+  'admin.user.promote',
 ]);
 export type AuditAction = z.infer<typeof AuditActionSchema>;

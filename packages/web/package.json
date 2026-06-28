@@ -19,6 +19,7 @@
     "@grindform/auth": "workspace:*",
     "@grindform/core": "workspace:*",
     "@grindform/db": "workspace:*",
+    "@grindform/loadcalc": "workspace:*",
     "@electric-sql/pglite": "0.2.14",
     "drizzle-orm": "0.36.4",
     "hono": "4.6.14",

@@ -130,7 +130,7 @@ const serialiseSettings = (
   saved: Settings | undefined,
 ): { theme: string; preferences: Record<string, unknown> } =>
   saved === undefined
-    ? { theme: 'grind', preferences: {} }
+    ? { theme: 'pulse', preferences: {} }
     : { theme: saved.theme, preferences: saved.preferences };
 
 /** Build the Grindform HTTP API. */
