@@ -9,6 +9,7 @@ import {
   findSessionByTokenHash,
   revokeAllSessionsForUser,
   revokeSession,
+  touchSession,
 } from '../src/repos/sessions-repo.ts';
 import { createUser } from '../src/repos/users-repo.ts';
 import { freshDb } from './helpers/db.ts';
@@ -46,8 +47,25 @@ describe('sessions-repo', () => {
       expiresAt,
     });
     expect(created.revokedAt).toBeNull();
+    expect(created.lastUsedAt).toBeInstanceOf(Date);
     expect((await findSessionByTokenHash(db, 'hash-a'))?.id).toBe(created.id);
     expect(await findSessionByTokenHash(db, 'missing')).toBeUndefined();
+  });
+
+  it('slides the idle clock forward on touch', async () => {
+    const created = await createSession(db, {
+      id: newSessionId(),
+      userId,
+      tokenHash: 'hash-touch',
+      userAgent: null,
+      ipAddress: null,
+      expiresAt,
+    });
+    const later = new Date(created.lastUsedAt.getTime() + 60_000);
+    await touchSession(db, created.id, later);
+    expect((await findSessionByTokenHash(db, 'hash-touch'))?.lastUsedAt?.toISOString()).toBe(
+      later.toISOString(),
+    );
   });
 
   it('revokes a single session idempotently', async () => {

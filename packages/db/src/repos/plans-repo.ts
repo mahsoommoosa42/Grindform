@@ -131,6 +131,34 @@ export const listPlanIdsForUser = async (
   return rows.map((r) => r.id);
 };
 
+/**
+ * Load a plan day by id **only if** it belongs to a plan owned by `userId`,
+ * returning the reassembled {@link PlanDay} (with its sessions) or
+ * `undefined`. Lets callers validate that a logged set targets a slot that
+ * actually exists in the user's own day, not just that the day is theirs.
+ */
+export const getDayForUser = async (
+  db: DbOrTx,
+  dayId: DayId,
+  userId: UserId,
+): Promise<PlanDay | undefined> => {
+  const [row] = await db
+    .select({
+      id: planDays.id,
+      planId: planDays.planId,
+      position: planDays.position,
+      weekday: planDays.weekday,
+      label: planDays.label,
+      sessions: planDays.sessions,
+      estMinutes: planDays.estMinutes,
+    })
+    .from(planDays)
+    .innerJoin(plans, eq(plans.id, planDays.planId))
+    .where(and(eq(planDays.id, dayId), eq(plans.userId, userId)))
+    .limit(1);
+  return row === undefined ? undefined : mapDay(row);
+};
+
 /** True iff `dayId` belongs to a plan owned by `userId`. Guards tracker IDOR. */
 export const dayBelongsToUser = async (
   db: DbOrTx,

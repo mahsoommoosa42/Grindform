@@ -160,6 +160,26 @@ describe('auth routes', () => {
       });
       expect(second.status).toBe(429);
     });
+
+    it('keys the throttle off the real client IP behind a trusted proxy', async () => {
+      ({ app, db, dispose } = await freshApp({
+        authRateLimit: { limit: 1, windowMs: 60_000 },
+        trustedProxyHops: 1,
+      }));
+      const attempt = async (forwardedFor: string): Promise<Response> =>
+        app.request('/v1/auth/login', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-forwarded-for': forwardedFor },
+          body: JSON.stringify({ email: 'nobody@example.com', password: 'whatever-password' }),
+        });
+
+      // Real client 5.5.5.5 (rightmost entry the proxy appended) gets throttled
+      // on its second attempt even though it spoofs a different left-most entry.
+      expect((await attempt('1.1.1.1, 5.5.5.5')).status).toBe(401);
+      expect((await attempt('9.9.9.9, 5.5.5.5')).status).toBe(429);
+      // A genuinely different client (6.6.6.6) still gets its own allowance.
+      expect((await attempt('1.1.1.1, 6.6.6.6')).status).toBe(401);
+    });
   });
 
   describe('logout', () => {

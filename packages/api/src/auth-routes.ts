@@ -50,7 +50,7 @@ import type { WeeklyPlan } from '@grindform/planner';
 
 import { requireAuth, resolveAuth, toPublicUser } from './context.ts';
 import type { AppEnv } from './context.ts';
-import { clientIpKey, createRateLimiter } from './rate-limit.ts';
+import { createClientIpKey, createRateLimiter } from './rate-limit.ts';
 import { parseOrThrow } from './validation.ts';
 
 /** Config the auth routes need from the composition root. */
@@ -61,6 +61,12 @@ export interface AuthRoutesDeps {
   readonly now: () => Date;
   /** Per-IP attempt cap for register/login. Defaults to 20 per 15 minutes. */
   readonly authRateLimit?: { readonly limit: number; readonly windowMs: number };
+  /**
+   * Number of trusted reverse-proxy hops in front of the app, used to read the
+   * real client IP from `X-Forwarded-For` for the auth throttle. Defaults to 1
+   * (single-container-behind-one-proxy). See {@link createClientIpKey}.
+   */
+  readonly trustedProxyHops?: number;
 }
 
 /**
@@ -102,7 +108,11 @@ export const registerAuthRoutes = (app: Hono<AppEnv>, deps: AuthRoutesDeps): voi
   const guard = requireAuth(db, deps.now);
   const limit = deps.authRateLimit?.limit ?? 20;
   const windowMs = deps.authRateLimit?.windowMs ?? 15 * 60 * 1000;
-  const throttle = createRateLimiter({ limit, windowMs, key: clientIpKey });
+  const throttle = createRateLimiter({
+    limit,
+    windowMs,
+    key: createClientIpKey(deps.trustedProxyHops ?? 1),
+  });
 
   app.post('/v1/auth/register', throttle, async (c) => {
     const body = parseOrThrow(RegisterInputSchema, await c.req.json(), 'registration');

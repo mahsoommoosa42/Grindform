@@ -65,6 +65,37 @@ describe('seedAdminUser', () => {
     }
   });
 
+  it('resets the password and revokes sessions when promoting (operator wins)', async () => {
+    const { app, db, dispose } = await freshApp();
+    const ATTACKER_PASSWORD = 'attacker-pre-registered-pw';
+    try {
+      // An attacker self-registers the bootstrap email first, with their own
+      // password, hoping to ride the boot-time promotion into an admin account.
+      const attacker = await registerClient(app, EMAIL, ATTACKER_PASSWORD);
+      await seedAdminUser({ db, email: EMAIL, password: PASSWORD });
+
+      // Their pre-existing session is revoked.
+      expect((await attacker.request('/v1/auth/me')).status).toBe(200);
+      const me = (await (await attacker.request('/v1/auth/me')).json()) as {
+        user: { email: string } | null;
+      };
+      expect(me.user).toBeNull();
+
+      const login = async (password: string): Promise<Response> =>
+        app.request('/v1/auth/login', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: EMAIL, password }),
+        });
+      // The attacker's chosen password no longer works...
+      expect((await login(ATTACKER_PASSWORD)).status).toBe(401);
+      // ...only the operator-configured password does.
+      expect((await login(PASSWORD)).status).toBe(200);
+    } finally {
+      await dispose();
+    }
+  });
+
   it('rejects an invalid email', async () => {
     const { db, dispose } = await freshApp();
     try {

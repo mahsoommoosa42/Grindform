@@ -9,6 +9,7 @@ import {
   createPlan,
   dayBelongsToUser,
   deletePlan,
+  getDayForUser,
   getPlan,
   listPlanIdsForUser,
   listPlanSummaries,
@@ -144,5 +145,20 @@ describe('plans-repo', () => {
     const dayId = plan.days[0]!.id;
     expect(await dayBelongsToUser(db, dayId, owner)).toBe(true);
     expect(await dayBelongsToUser(db, dayId, other)).toBe(false);
+  });
+
+  it('getDayForUser returns the owned day and undefined otherwise', async () => {
+    const owner = newUserId();
+    const other = newUserId();
+    const plan = makePlan();
+    await createPlan(db, owner, plan);
+    const dayId = plan.days[0]!.id;
+    const day = await getDayForUser(db, dayId, owner);
+    expect(day?.id).toBe(dayId);
+    expect(day?.weekday).toBe('mon');
+    expect(day?.sessions[0]?.kind).toBe('training');
+    // Another user can't load it, and an unknown day id yields undefined.
+    expect(await getDayForUser(db, dayId, other)).toBeUndefined();
+    expect(await getDayForUser(db, plan.days[2]!.id, other)).toBeUndefined();
   });
 });

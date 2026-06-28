@@ -117,6 +117,15 @@ describe('admin console', () => {
       expect(body.user.status).toBe('active');
     });
 
+    it('403s an admin disabling their own account (last-admin lockout guard)', async () => {
+      const res = await admin.request(`/v1/admin/users/${admin.userId}/disable`, {
+        method: 'POST',
+      });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { error: { code: string } };
+      expect(body.error.code).toBe('FORBIDDEN');
+    });
+
     it('404s disabling an unknown user', async () => {
       const res = await admin.request(`/v1/admin/users/${UNKNOWN_USER}/disable`, {
         method: 'POST',
@@ -135,6 +144,13 @@ describe('admin console', () => {
       const res = await admin.request(`/v1/admin/users/${member.userId}`, { method: 'DELETE' });
       expect(res.status).toBe(204);
       expect((await admin.request(`/v1/admin/users/${member.userId}`)).status).toBe(404);
+    });
+
+    it('403s an admin deleting their own account (last-admin lockout guard)', async () => {
+      const res = await admin.request(`/v1/admin/users/${admin.userId}`, { method: 'DELETE' });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { error: { code: string } };
+      expect(body.error.code).toBe('FORBIDDEN');
     });
 
     it('404s deleting an unknown user', async () => {

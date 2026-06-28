@@ -19,8 +19,15 @@
 /** Name of the session cookie. */
 export const SESSION_COOKIE_NAME = 'gf_session';
 
-/** Session TTL — 30 days. */
+/** Absolute session TTL — 30 days from when it was minted. */
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Idle session TTL — 14 days. A session unused for longer than this is
+ * treated as expired even before its absolute {@link SESSION_TTL_MS} is up,
+ * bounding the window in which a stolen-but-idle cookie stays valid.
+ */
+export const SESSION_IDLE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 /** Compute the `expiresAt` for a session minted at `now`. */
 export const sessionExpiresAt = (now: Date): Date => new Date(now.getTime() + SESSION_TTL_MS);

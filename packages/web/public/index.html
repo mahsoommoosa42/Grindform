@@ -6,15 +6,7 @@
     <meta name="color-scheme" content="dark light" />
     <title>Grindform — Plan &amp; track your week</title>
     <link rel="stylesheet" href="/styles.css" />
-    <script>
-      // Apply the saved theme before first paint to avoid a flash.
-      try {
-        const saved = localStorage.getItem('gf-theme');
-        if (saved) document.documentElement.setAttribute('data-theme', saved);
-      } catch (_) {
-        /* localStorage may be unavailable; default theme stays. */
-      }
-    </script>
+    <script src="/theme-init.js"></script>
     <script type="module" src="/app/main.js"></script>
   </head>
   <body>
