@@ -1,0 +1,57 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# build artefacts
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# testing & coverage
+coverage/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+.pnpm-debug.log*
+
+# env
+.env
+.env.local
+.env.*.local
+
+# bun (keep bun.lock; ignore old binary lockfile)
+bun.lockb
+
+# local database state (PGlite data dir)
+.data/
+*.sqlite
+*.sqlite-journal
+
+# tooling caches
+.turbo/
+.cache/
+
+# Python (uv-managed toolchain at tools/python/)
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# generated client bundle (built by bun; rebuilt in CI/Docker)
+packages/web/public/app/

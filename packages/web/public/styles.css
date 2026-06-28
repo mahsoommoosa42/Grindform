@@ -1,0 +1,173 @@
+/*
+ * Global design tokens + theme palettes for Grindform.
+ *
+ * The default look is "Pulse": a crisp white canvas, near-black ink, and a
+ * single deep-red accent — a clean, energetic identity that suits a fitness
+ * product. Fraunces (serif) carries the wordmark + editorial headings and
+ * Manrope (sans) the UI chrome. Three alternate palettes ship alongside it.
+ *
+ * Themes are expressed purely as CSS custom properties on the document
+ * root, selected by `data-theme` on <html>. Because custom properties
+ * pierce shadow boundaries, the Lit components (which render into shadow
+ * DOM and consume these via `var(--gf-*)`) restyle instantly when the
+ * theme attribute changes — no per-component theme code required.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400..600&display=swap');
+
+:root {
+  /* Structural tokens shared across every theme. */
+  --gf-font: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --gf-font-script: 'Fraunces', 'Iowan Old Style', Charter, 'Palatino Linotype', Georgia, serif;
+  --gf-font-mono: ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  --gf-radius-sm: 8px;
+  --gf-radius: 12px;
+  --gf-radius-lg: 16px;
+  --gf-radius-pill: 999px;
+  --gf-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --gf-speed: 140ms;
+}
+
+/* Pulse — the default: white canvas, near-black ink, deep-red accent. */
+:root,
+:root[data-theme='pulse'] {
+  color-scheme: light;
+  --gf-bg: #ffffff;
+  --gf-surface: #ffffff;
+  --gf-surface-2: #f6f6f7;
+  --gf-hover: #efeff1;
+  --gf-text: #16161a;
+  --gf-text-soft: #3a3a40;
+  --gf-muted: #6b7280;
+  --gf-faint: #a1a1aa;
+  --gf-accent: #c81e1e;
+  --gf-accent-2: #a31616;
+  --gf-accent-tint: #e25b5b;
+  --gf-accent-text: #ffffff;
+  --gf-accent-soft: rgba(200, 30, 30, 0.1);
+  --gf-highlight: #f4c430;
+  --gf-highlight-soft: rgba(244, 196, 48, 0.16);
+  --gf-border: #e6e6e9;
+  --gf-border-soft: #f0f0f2;
+  --gf-ring: rgba(200, 30, 30, 0.3);
+  --gf-success: #16a34a;
+  --gf-danger: #c81e1e;
+  --gf-radius: 12px;
+  --gf-shadow-sm: 0 1px 2px rgba(20, 20, 25, 0.06);
+  --gf-shadow: 0 6px 22px rgba(20, 20, 25, 0.09);
+  --gf-shadow-lg: 0 28px 70px rgba(20, 20, 25, 0.16);
+}
+
+/* Grind — true grind mode: matte black canvas, high-contrast ink, blood-red. */
+:root[data-theme='grind'] {
+  color-scheme: dark;
+  --gf-bg: #0b0b0c;
+  --gf-surface: #161617;
+  --gf-surface-2: #1d1d1f;
+  --gf-hover: #262629;
+  --gf-text: #f7f7f8;
+  --gf-text-soft: #cdcdd2;
+  --gf-muted: #8c8c95;
+  --gf-faint: #5a5a62;
+  --gf-accent: #ff2d2d;
+  --gf-accent-2: #d31616;
+  --gf-accent-tint: #ff6363;
+  --gf-accent-text: #ffffff;
+  --gf-accent-soft: rgba(255, 45, 45, 0.14);
+  --gf-highlight: #ffd34d;
+  --gf-highlight-soft: rgba(255, 211, 77, 0.16);
+  --gf-border: #2b2b2f;
+  --gf-border-soft: #1f1f22;
+  --gf-ring: rgba(255, 45, 45, 0.4);
+  --gf-success: #36d399;
+  --gf-danger: #ff4d4d;
+  --gf-radius: 12px;
+  --gf-shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.5);
+  --gf-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  --gf-shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.7);
+}
+
+/* Girly Pop — "Bubblegum Pop": playful and bright. A soft, flat pink canvas (no
+   busy gradient) with clean white cards, a hot-pink accent, blush secondary
+   surfaces, and a cream-yellow highlight that gets used (superset badges, volume).
+   Pops without the messy radial wash the old Cherry Bomb theme had. */
+:root[data-theme='girlypop'] {
+  color-scheme: light;
+  --gf-bg: #ffeaf3;
+  --gf-surface: #ffffff;
+  --gf-surface-2: #ffd9ea;
+  --gf-hover: #ffc2dd;
+  --gf-text: #3a0a26;
+  --gf-text-soft: #6a2348;
+  --gf-muted: #a85b85;
+  --gf-faint: #ce9ab8;
+  --gf-accent: #ff2d87;
+  --gf-accent-2: #d81b6b;
+  --gf-accent-tint: #ff7fb4;
+  --gf-accent-text: #ffffff;
+  --gf-accent-soft: rgba(255, 45, 135, 0.12);
+  --gf-highlight: #ffe066;
+  --gf-highlight-soft: rgba(255, 224, 102, 0.42);
+  --gf-border: #ffc2dd;
+  --gf-border-soft: #ffd9ea;
+  --gf-ring: rgba(255, 45, 135, 0.3);
+  --gf-success: #1f9e8f;
+  --gf-danger: #e8003d;
+  --gf-radius: 14px;
+  --gf-shadow-sm: 0 2px 8px rgba(255, 45, 135, 0.12);
+  --gf-shadow: 0 10px 28px rgba(255, 45, 135, 0.18);
+  --gf-shadow-lg: 0 30px 80px rgba(255, 45, 135, 0.24);
+}
+
+/* Minimal — Quillcast "Light": crisp neutral white, rust accent kept. */
+:root[data-theme='minimal'] {
+  color-scheme: light;
+  --gf-bg: #ffffff;
+  --gf-surface: #fafafa;
+  --gf-surface-2: #f4f4f5;
+  --gf-hover: #ededee;
+  --gf-text: #18181b;
+  --gf-text-soft: #3f3f46;
+  --gf-muted: #6b7280;
+  --gf-faint: #a1a1aa;
+  --gf-accent: #d97757;
+  --gf-accent-2: #b85a3e;
+  --gf-accent-tint: #e8a87c;
+  --gf-accent-text: #ffffff;
+  --gf-accent-soft: rgba(217, 119, 87, 0.1);
+  --gf-highlight: #e0a82e;
+  --gf-highlight-soft: rgba(224, 168, 46, 0.14);
+  --gf-border: #e4e4e7;
+  --gf-border-soft: #efeff1;
+  --gf-ring: rgba(217, 119, 87, 0.28);
+  --gf-success: #16a34a;
+  --gf-danger: #dc2626;
+  --gf-radius: 10px;
+  --gf-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --gf-shadow: 0 6px 22px rgba(0, 0, 0, 0.08);
+  --gf-shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--gf-bg);
+  color: var(--gf-text);
+  min-height: 100vh;
+  font-family: var(--gf-font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  font-feature-settings: 'liga', 'kern', 'calt';
+  text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
+}

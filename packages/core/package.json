@@ -1,0 +1,31 @@
+{
+  "name": "@grindform/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ids": "./src/ids.ts",
+    "./result": "./src/result.ts",
+    "./errors": "./src/errors.ts",
+    "./schemas": "./src/schemas.ts"
+  },
+  "scripts": {
+    "build": "echo 'source-only package; no build step'",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ulidx": "2.4.1",
+    "zod": "3.25.63"
+  },
+  "devDependencies": {
+    "typescript": "5.7.2",
+    "vitest": "2.1.8",
+    "@vitest/coverage-v8": "2.1.8"
+  }
+}
