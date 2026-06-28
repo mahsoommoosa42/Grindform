@@ -87,36 +87,36 @@
   --gf-shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.7);
 }
 
-/* Girly Pop — "Cherry Bomb": bold, retro, high-energy. A warm blush canvas with
-   tinted (not stark-white) surfaces, cherry-red accent, blush-pink secondary
-   surfaces, and a cream-yellow highlight that actually gets used (badges, volume).
-   Surfaces carry colour so the theme reads vibrant rather than mostly white. */
+/* Girly Pop — "Bubblegum Pop": playful and bright. A soft, flat pink canvas (no
+   busy gradient) with clean white cards, a hot-pink accent, blush secondary
+   surfaces, and a cream-yellow highlight that gets used (superset badges, volume).
+   Pops without the messy radial wash the old Cherry Bomb theme had. */
 :root[data-theme='girlypop'] {
   color-scheme: light;
-  --gf-bg: #ffe3ef;
-  --gf-surface: #fff0f6;
-  --gf-surface-2: #ffd2e4;
-  --gf-hover: #ffbcd6;
-  --gf-text: #1a000f;
-  --gf-text-soft: #4a1326;
-  --gf-muted: #9a4f69;
-  --gf-faint: #c98caa;
-  --gf-accent: #e8003d;
-  --gf-accent-2: #c30033;
-  --gf-accent-tint: #ff85b4;
+  --gf-bg: #ffeaf3;
+  --gf-surface: #ffffff;
+  --gf-surface-2: #ffd9ea;
+  --gf-hover: #ffc2dd;
+  --gf-text: #3a0a26;
+  --gf-text-soft: #6a2348;
+  --gf-muted: #a85b85;
+  --gf-faint: #ce9ab8;
+  --gf-accent: #ff2d87;
+  --gf-accent-2: #d81b6b;
+  --gf-accent-tint: #ff7fb4;
   --gf-accent-text: #ffffff;
-  --gf-accent-soft: rgba(232, 0, 61, 0.14);
-  --gf-highlight: #ffe566;
-  --gf-highlight-soft: rgba(255, 229, 102, 0.42);
-  --gf-border: #ffb3cf;
-  --gf-border-soft: #ffd2e4;
-  --gf-ring: rgba(232, 0, 61, 0.32);
+  --gf-accent-soft: rgba(255, 45, 135, 0.12);
+  --gf-highlight: #ffe066;
+  --gf-highlight-soft: rgba(255, 224, 102, 0.42);
+  --gf-border: #ffc2dd;
+  --gf-border-soft: #ffd9ea;
+  --gf-ring: rgba(255, 45, 135, 0.3);
   --gf-success: #1f9e8f;
   --gf-danger: #e8003d;
   --gf-radius: 14px;
-  --gf-shadow-sm: 0 2px 8px rgba(232, 0, 61, 0.12);
-  --gf-shadow: 0 10px 28px rgba(232, 0, 61, 0.2);
-  --gf-shadow-lg: 0 30px 80px rgba(232, 0, 61, 0.26);
+  --gf-shadow-sm: 0 2px 8px rgba(255, 45, 135, 0.12);
+  --gf-shadow: 0 10px 28px rgba(255, 45, 135, 0.18);
+  --gf-shadow-lg: 0 30px 80px rgba(255, 45, 135, 0.24);
 }
 
 /* Minimal — Quillcast "Light": crisp neutral white, rust accent kept. */
@@ -150,16 +150,6 @@
 
 * {
   box-sizing: border-box;
-}
-
-/* Girly Pop gets a soft cherry→blush→cream wash behind everything so the canvas
-   itself carries colour instead of reading as flat white. */
-:root[data-theme='girlypop'] body {
-  background:
-    radial-gradient(1100px 620px at 8% -8%, rgba(255, 229, 102, 0.5), transparent 60%),
-    radial-gradient(1000px 720px at 102% 4%, rgba(255, 133, 180, 0.55), transparent 58%),
-    linear-gradient(180deg, #ffe9f2 0%, #ffd8e8 100%);
-  background-attachment: fixed;
 }
 
 html,
