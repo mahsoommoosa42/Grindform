@@ -80,8 +80,24 @@ export const LogSetBodySchema = z.object({
   rpe: z.number().min(1).max(10).optional(),
 });
 
-/** Body for updating settings. */
+/** Max number of top-level keys and serialised bytes allowed in `preferences`. */
+const MAX_PREFERENCE_KEYS = 50;
+const MAX_PREFERENCE_BYTES = 4096;
+
+/**
+ * Body for updating settings. `preferences` is a free-form bag the client
+ * owns, so it's bounded (key count + serialised size) to stop it being used
+ * as unbounded per-user storage.
+ */
 export const SettingsBodySchema = z.object({
   theme: ThemeIdSchema,
-  preferences: z.record(z.string(), z.unknown()).default({}),
+  preferences: z
+    .record(z.string(), z.unknown())
+    .default({})
+    .refine((p) => Object.keys(p).length <= MAX_PREFERENCE_KEYS, {
+      message: `preferences may not exceed ${MAX_PREFERENCE_KEYS} keys`,
+    })
+    .refine((p) => JSON.stringify(p).length <= MAX_PREFERENCE_BYTES, {
+      message: `preferences may not exceed ${MAX_PREFERENCE_BYTES} bytes`,
+    }),
 });

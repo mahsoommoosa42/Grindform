@@ -16,6 +16,7 @@ import { logSet } from '../src/repos/logs-repo.ts';
 import { createPlan } from '../src/repos/plans-repo.ts';
 import { upsertSettings } from '../src/repos/settings-repo.ts';
 import {
+  countAdmins,
   createUser,
   deleteUserAndData,
   findUserByEmail,
@@ -25,6 +26,7 @@ import {
   setUserRole,
   setUserStatus,
   touchLastLogin,
+  updateUserPassword,
 } from '../src/repos/users-repo.ts';
 import type { NewUser } from '../src/repos/users-repo.ts';
 import { freshDb } from './helpers/db.ts';
@@ -100,6 +102,23 @@ describe('users-repo', () => {
     expect(promoted?.role).toBe('admin');
     expect((await findUserById(db, user.id))?.role).toBe('admin');
     expect(await setUserRole(db, newUserId(), 'admin')).toBeUndefined();
+  });
+
+  it('updates a password hash and reports undefined for an unknown id', async () => {
+    const user = await createUser(db, seed('pw@example.com'));
+    const updated = await updateUserPassword(db, user.id, '$scrypt$new');
+    expect(updated?.passwordHash).toBe('$scrypt$new');
+    expect((await findUserById(db, user.id))?.passwordHash).toBe('$scrypt$new');
+    expect(await updateUserPassword(db, newUserId(), '$scrypt$new')).toBeUndefined();
+  });
+
+  it('counts admin accounts', async () => {
+    expect(await countAdmins(db)).toBe(0);
+    const a = await createUser(db, seed('admin1@example.com'));
+    await createUser(db, seed('member@example.com'));
+    expect(await countAdmins(db)).toBe(0);
+    await setUserRole(db, a.id, 'admin');
+    expect(await countAdmins(db)).toBe(1);
   });
 
   it('lists users with a plan count, newest first', async () => {

@@ -10,7 +10,7 @@
 
 import type { Hono } from 'hono';
 
-import { isUserId, NotFoundError } from '@grindform/core';
+import { ForbiddenError, isUserId, NotFoundError } from '@grindform/core';
 import type { UserId } from '@grindform/core';
 import {
   deleteUserAndData,
@@ -77,6 +77,11 @@ export const registerAdminRoutes = (app: Hono<AppEnv>, deps: AdminRoutesDeps): v
 
   app.post('/v1/admin/users/:userId/disable', ...guards, async (c) => {
     const userId = parseUserIdParam(c.req.param('userId'));
+    // The caller is always an admin, so blocking self-disable also prevents
+    // disabling the last remaining admin (that admin could only be yourself).
+    if (userId === c.get('auth').userId) {
+      throw new ForbiddenError('you cannot disable your own account');
+    }
     const updated = await setUserStatus(db, userId, 'disabled');
     if (updated === undefined) throw new NotFoundError('user not found');
     await revokeAllSessionsForUser(db, userId);
@@ -102,6 +107,11 @@ export const registerAdminRoutes = (app: Hono<AppEnv>, deps: AdminRoutesDeps): v
 
   app.delete('/v1/admin/users/:userId', ...guards, async (c) => {
     const userId = parseUserIdParam(c.req.param('userId'));
+    // As with disable: blocking self-deletion also guarantees the last admin
+    // can never be removed, since that admin would have to be the caller.
+    if (userId === c.get('auth').userId) {
+      throw new ForbiddenError('you cannot delete your own account');
+    }
     await recordAudit(db, {
       action: 'admin.user.delete',
       actorUserId: c.get('auth').userId,

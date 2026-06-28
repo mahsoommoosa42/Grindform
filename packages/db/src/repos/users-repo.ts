@@ -113,6 +113,30 @@ export const setUserRole = async (
   return row;
 };
 
+/**
+ * Set an account's password hash. Returns the updated row, or `undefined`
+ * if no such account exists. Used by the admin bootstrap so the operator's
+ * configured password always wins over whatever a pre-existing account had.
+ */
+export const updateUserPassword = async (
+  db: DbOrTx,
+  id: UserId,
+  passwordHash: string,
+): Promise<User | undefined> => {
+  const [row] = await db
+    .update(users)
+    .set({ passwordHash, updatedAt: new Date() })
+    .where(eq(users.id, id))
+    .returning();
+  return row;
+};
+
+/** Count accounts holding the admin role. Guards against admin lockout. */
+export const countAdmins = async (db: DbOrTx): Promise<number> => {
+  const rows = await db.select({ n: count() }).from(users).where(eq(users.role, 'admin'));
+  return rows.reduce((total, row) => total + row.n, 0);
+};
+
 /** List every account with a plan count, newest first. For the admin console. */
 export const listUsersWithStats = async (db: DbOrTx): Promise<readonly UserWithStats[]> => {
   const rows = await db

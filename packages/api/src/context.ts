@@ -13,7 +13,7 @@ import type { MiddlewareHandler } from 'hono';
 import { extractSessionCookie, hashToken, isSessionActive } from '@grindform/auth';
 import { ForbiddenError, UnauthorizedError } from '@grindform/core';
 import type { Role, SessionId, UserId } from '@grindform/core';
-import { findSessionByTokenHash, findUserById } from '@grindform/db';
+import { findSessionByTokenHash, findUserById, touchSession } from '@grindform/db';
 import type { Db, User } from '@grindform/db';
 
 /** The identity attached to an authenticated request. */
@@ -69,6 +69,9 @@ export const resolveAuth = async (
   if (session === undefined) return null;
   if (!isSessionActive(session, now)) return null;
   const user = (await findUserById(db, session.userId)) as User;
+  // Slide the idle window forward on use, so an actively-used session stays
+  // alive up to its absolute expiry while an abandoned one lapses sooner.
+  await touchSession(db, session.id, now);
   return { user, sessionId: session.id };
 };
 

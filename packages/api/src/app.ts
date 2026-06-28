@@ -29,12 +29,13 @@ import {
   isPlanId,
   NotFoundError,
   toErrorPayload,
+  ValidationError,
 } from '@grindform/core';
 import type { PlanId, UserId } from '@grindform/core';
 import {
   createPlan,
-  dayBelongsToUser,
   deletePlan,
+  getDayForUser,
   getPlan,
   getSettings,
   listPlanSummaries,
@@ -77,6 +78,11 @@ export interface ApiDeps {
   readonly now?: () => Date;
   /** Per-IP attempt cap for register/login. Defaults to 20 per 15 minutes. */
   readonly authRateLimit?: { readonly limit: number; readonly windowMs: number };
+  /**
+   * Trusted reverse-proxy hops in front of the app, used to read the real
+   * client IP from `X-Forwarded-For` for the auth throttle. Defaults to 1.
+   */
+  readonly trustedProxyHops?: number;
 }
 
 /** A `pln_…` path parameter schema. */
@@ -177,6 +183,7 @@ export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
     secureCookies,
     now,
     ...(deps.authRateLimit === undefined ? {} : { authRateLimit: deps.authRateLimit }),
+    ...(deps.trustedProxyHops === undefined ? {} : { trustedProxyHops: deps.trustedProxyHops }),
   });
   registerAdminRoutes(app, { db, now });
 
@@ -253,24 +260,23 @@ export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
 
   app.post('/v1/logs', guard, async (c) => {
     const body = parseOrThrow(LogSetBodySchema, await c.req.json(), 'log body');
-    if (!(await dayBelongsToUser(db, body.dayId, c.get('auth').userId))) {
-      throw new NotFoundError('day not found', { dayId: body.dayId });
+    const day = await getDayForUser(db, body.dayId, c.get('auth').userId);
+    if (day === undefined) throw new NotFoundError('day not found', { dayId: body.dayId });
+    // The set must target a slot that actually exists in the user's own day,
+    // and name an exercise that matches that slot — otherwise the log is
+    // rejected rather than silently storing an orphan set (which would skew
+    // volume rollups). Using the real slot also attributes per-muscle volume
+    // correctly instead of recording an empty muscle list.
+    const slot = findSlot(day, body.slotId);
+    if (slot === undefined) throw new NotFoundError('slot not found', { slotId: body.slotId });
+    if (slot.exerciseSlug !== body.exerciseSlug) {
+      throw new ValidationError('exercise does not match the target slot', {
+        slotId: body.slotId,
+      });
     }
     const log = await logCompletedSet(db, {
       dayId: body.dayId,
-      slot: {
-        id: body.slotId,
-        exerciseSlug: body.exerciseSlug,
-        name: body.exerciseSlug,
-        primaryMuscles: [],
-        scheme: {
-          sets: 1,
-          repsLow: body.reps,
-          repsHigh: body.reps,
-          restSeconds: 0,
-          perSide: false,
-        },
-      },
+      slot,
       setNumber: body.setNumber,
       reps: body.reps,
       loadKg: body.loadKg,

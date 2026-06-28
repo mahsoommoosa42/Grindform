@@ -29,18 +29,25 @@ export interface NewSession {
 
 /** Insert a session row and return it. */
 export const createSession = async (db: DbOrTx, input: NewSession): Promise<Session> => {
+  const now = new Date();
   const row: Session = {
     id: input.id,
     userId: input.userId,
     tokenHash: input.tokenHash,
     userAgent: input.userAgent,
     ipAddress: input.ipAddress,
-    createdAt: new Date(),
+    createdAt: now,
     expiresAt: input.expiresAt,
     revokedAt: null,
+    lastUsedAt: now,
   };
   await db.insert(sessions).values(row);
   return row;
+};
+
+/** Bump a session's idle clock to `when` (called on each authenticated request). */
+export const touchSession = async (db: DbOrTx, id: SessionId, when: Date): Promise<void> => {
+  await db.update(sessions).set({ lastUsedAt: when }).where(eq(sessions.id, id));
 };
 
 /** Look up a session by the hash of its cookie token. */

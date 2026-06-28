@@ -10,7 +10,7 @@ interface PlanResponse {
     id: string;
     days: {
       id: string;
-      sessions: { kind: string; blocks?: { slots: { id: string }[] }[] }[];
+      sessions: { kind: string; blocks?: { slots: { id: string; exerciseSlug: string }[] }[] }[];
     }[];
   };
 }
@@ -36,17 +36,19 @@ const createSamplePlan = async (client: Client): Promise<PlanResponse['plan']> =
   return ((await res.json()) as PlanResponse).plan;
 };
 
-const firstSlotId = (plan: PlanResponse['plan']): string => {
+const firstSlot = (plan: PlanResponse['plan']): { id: string; exerciseSlug: string } => {
   for (const day of plan.days) {
     for (const session of day.sessions) {
       for (const block of session.blocks ?? []) {
         const slot = block.slots[0];
-        if (slot !== undefined) return slot.id;
+        if (slot !== undefined) return { id: slot.id, exerciseSlug: slot.exerciseSlug };
       }
     }
   }
   throw new Error('no slot in plan');
 };
+
+const firstSlotId = (plan: PlanResponse['plan']): string => firstSlot(plan).id;
 
 describe('Grindform API', () => {
   let app: Hono<AppEnv>;
@@ -310,11 +312,11 @@ describe('Grindform API', () => {
     it('logs a single set with RPE', async () => {
       const plan = await createSamplePlan(client);
       const dayId = plan.days[0]?.id ?? '';
-      const slotId = firstSlotId(plan);
+      const slot = firstSlot(plan);
       const res = await client.json('/v1/logs', 'POST', {
         dayId,
-        slotId,
-        exerciseSlug: 'back-squat',
+        slotId: slot.id,
+        exerciseSlug: slot.exerciseSlug,
         setNumber: 1,
         reps: 5,
         loadKg: 80,
@@ -328,11 +330,11 @@ describe('Grindform API', () => {
     it('logs a single set without RPE', async () => {
       const plan = await createSamplePlan(client);
       const dayId = plan.days[0]?.id ?? '';
-      const slotId = firstSlotId(plan);
+      const slot = firstSlot(plan);
       const res = await client.json('/v1/logs', 'POST', {
         dayId,
-        slotId,
-        exerciseSlug: 'back-squat',
+        slotId: slot.id,
+        exerciseSlug: slot.exerciseSlug,
         setNumber: 1,
         reps: 5,
         loadKg: 80,
@@ -347,15 +349,45 @@ describe('Grindform API', () => {
       expect(res.status).toBe(400);
     });
 
+    it('returns 404 logging a slot that is not in the day', async () => {
+      const plan = await createSamplePlan(client);
+      const dayId = plan.days[0]?.id ?? '';
+      const res = await client.json('/v1/logs', 'POST', {
+        dayId,
+        slotId: `slt_${'0'.repeat(26)}`,
+        exerciseSlug: 'back-squat',
+        setNumber: 1,
+        reps: 5,
+        loadKg: 80,
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 400 when the exercise does not match the slot', async () => {
+      const plan = await createSamplePlan(client);
+      const dayId = plan.days[0]?.id ?? '';
+      const slot = firstSlot(plan);
+      const wrong = slot.exerciseSlug === 'back-squat' ? 'front-squat' : 'back-squat';
+      const res = await client.json('/v1/logs', 'POST', {
+        dayId,
+        slotId: slot.id,
+        exerciseSlug: wrong,
+        setNumber: 1,
+        reps: 5,
+        loadKg: 80,
+      });
+      expect(res.status).toBe(400);
+    });
+
     it('returns 404 logging against a day that is not the user’s', async () => {
       const plan = await createSamplePlan(client);
       const dayId = plan.days[0]?.id ?? '';
-      const slotId = firstSlotId(plan);
+      const slot = firstSlot(plan);
       const other = await registerClient(app, 'other@example.com');
       const res = await other.json('/v1/logs', 'POST', {
         dayId,
-        slotId,
-        exerciseSlug: 'back-squat',
+        slotId: slot.id,
+        exerciseSlug: slot.exerciseSlug,
         setNumber: 1,
         reps: 5,
         loadKg: 80,

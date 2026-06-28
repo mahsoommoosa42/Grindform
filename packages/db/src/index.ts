@@ -16,6 +16,7 @@ export {
   createPlan,
   dayBelongsToUser,
   deletePlan,
+  getDayForUser,
   getPlan,
   listPlanIdsForUser,
   listPlanSummaries,
@@ -27,6 +28,7 @@ export type { NewSetLog, SetLog } from './repos/logs-repo.ts';
 export { getSettings, upsertSettings } from './repos/settings-repo.ts';
 export type { Settings, SettingsPatch } from './repos/settings-repo.ts';
 export {
+  countAdmins,
   createUser,
   deleteUserAndData,
   findUserByEmail,
@@ -36,6 +38,7 @@ export {
   setUserRole,
   setUserStatus,
   touchLastLogin,
+  updateUserPassword,
 } from './repos/users-repo.ts';
 export type { NewUser, User, UserWithStats } from './repos/users-repo.ts';
 export {
@@ -43,6 +46,7 @@ export {
   findSessionByTokenHash,
   revokeAllSessionsForUser,
   revokeSession,
+  touchSession,
 } from './repos/sessions-repo.ts';
 export type { NewSession, Session } from './repos/sessions-repo.ts';
 export { listAuditForUser, recordAudit } from './repos/audit-repo.ts';

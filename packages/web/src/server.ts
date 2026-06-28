@@ -8,12 +8,21 @@
  */
 
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { serveStatic } from 'hono/bun';
+import { secureHeaders } from 'hono/secure-headers';
 
 import { createApp, seedAdminUser } from '@grindform/api';
 import { parseAdminEmails } from '@grindform/auth';
 
 import { createServerDb } from './db.ts';
+
+/** Parse an env var as a strictly-positive integer, or `undefined` if invalid. */
+const parsePositiveInt = (raw: string | undefined): number | undefined => {
+  if (raw === undefined || raw.trim() === '') return undefined;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+};
 
 const { db } = await createServerDb();
 
@@ -40,12 +49,56 @@ if (bootstrapEmail !== undefined && bootstrapEmail.length > 0 && bootstrapPasswo
 const secureCookies = process.env.GRINDFORM_INSECURE_COOKIES !== '1';
 // Per-IP throttle on the auth endpoints; overridable so the e2e harness (which
 // drives many signups from one IP) isn't tripped by the production default.
-const rateLimitOverride = Number(process.env.GRINDFORM_AUTH_RATE_LIMIT);
-const authRateLimit = Number.isFinite(rateLimitOverride)
-  ? { limit: rateLimitOverride, windowMs: 15 * 60_000 }
-  : undefined;
+// Only a positive integer is honoured — a typo (empty/0/negative/NaN) must not
+// silently weaken or disable the throttle, so we warn and fall back to default.
+const rateLimitOverride = parsePositiveInt(process.env.GRINDFORM_AUTH_RATE_LIMIT);
+if (process.env.GRINDFORM_AUTH_RATE_LIMIT !== undefined && rateLimitOverride === undefined) {
+  console.warn(
+    `Ignoring invalid GRINDFORM_AUTH_RATE_LIMIT="${process.env.GRINDFORM_AUTH_RATE_LIMIT}" ` +
+      '(expected a positive integer); using the default throttle.',
+  );
+}
+const authRateLimit =
+  rateLimitOverride === undefined ? undefined : { limit: rateLimitOverride, windowMs: 15 * 60_000 };
+
+// How many trusted reverse-proxy hops sit in front of the app. The real client
+// IP for the auth throttle is read this many entries from the right of
+// X-Forwarded-For, so a spoofed XFF can't bypass the limit. Defaults to 1.
+const trustedProxyHops = parsePositiveInt(process.env.GRINDFORM_TRUSTED_PROXY_HOPS) ?? 1;
 
 const app = new Hono();
+
+// Security headers on every response: a tight CSP (the client is one
+// self-hosted bundle + stylesheet), plus nosniff, no framing, a strict
+// referrer policy, and HSTS in production.
+app.use(
+  '*',
+  secureHeaders({
+    contentSecurityPolicy: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:'],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"],
+    },
+    xFrameOptions: 'DENY',
+    xContentTypeOptions: 'nosniff',
+    referrerPolicy: 'strict-origin-when-cross-origin',
+    ...(secureCookies
+      ? { strictTransportSecurity: 'max-age=31536000; includeSubDomains' }
+      : { strictTransportSecurity: false }),
+  }),
+);
+
+// Cap request bodies so no endpoint can be fed an oversized payload. The API
+// only ever ingests small JSON documents (a plan spec, a settings bag, auth
+// credentials), so 128 KiB is generous.
+app.use('/v1/*', bodyLimit({ maxSize: 128 * 1024 }));
 
 // JSON API.
 app.route(
@@ -54,12 +107,14 @@ app.route(
     db,
     adminEmails,
     secureCookies,
+    trustedProxyHops,
     ...(authRateLimit === undefined ? {} : { authRateLimit }),
   }),
 );
 
 // Static assets (CSS, the bundled client, etc.).
 app.use('/styles.css', serveStatic({ path: './public/styles.css' }));
+app.use('/theme-init.js', serveStatic({ path: './public/theme-init.js' }));
 app.use('/app/*', serveStatic({ root: './public' }));
 
 // SPA fallback: any non-API GET serves the app shell.
