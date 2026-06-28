@@ -101,6 +101,33 @@ set. Concrete assertions that catch breakage:
 - **Supersets:** accessories are paired and badged `Superset A1/A2 · back-to-back`.
 Full plan: `test-plan-training-engine.md` at the repo root.
 
+## Multi-session-per-day model — what to verify
+A day no longer "blocks for X"; it holds an ordered list of **sessions**. Build
+controls per day: `+ Training` / `+ Activity`, a `✕` per session, and a
+**Custom time & physio** `<details>` per training session (Session min, Physio min,
+Physio placement select with values 0=Before warm-up … 4=At the end). Full plan:
+`test-plan-multi-session.md`. Concrete assertions:
+- **Multi-session day:** add Training + an Activity (e.g. Run 30m) to one day →
+  generate → that day's `card-<wd>` shows BOTH the training blocks AND the external
+  session ("Run · 30m planned") on one card.
+- **External tracking:** an external session's tracker renders ONLY an actual-minutes
+  field + **Mark done** (no exercise/kg slots). Tapping flips it to **"Done ✓"** and
+  the card shows "… done ✓".
+- **Rest day:** remove all of a day's sessions → Build row reads "Rest day — no
+  sessions" and the generated card reads **"Rest day" (0m) with NO Track button**.
+- **Flexible physio placement:** set Physio min (e.g. 12) + placement = "At the end"
+  (value 4) → the Physio block renders **after Cool-down**, last in the block list
+  (check both the week card `<ul>` order and the tracker). The *position* is the
+  discriminator, not mere presence.
+- **Per-session budget:** set one training day's Session min (e.g. 45) and leave
+  others at the global default (60) → that day's total minutes are visibly smaller
+  than the default days. (Budget is a cap; a full-body focus may total well under the
+  cap and omit a "Main lift" block — that's allocation behaviour, not a regression.)
+- **Gotcha:** the planner is source-only, so a multi-session payload can fail with a
+  spurious "invalid plan input" if a **stale server** from a prior session is still
+  running old schema/planner code. Restart the server (see stale-server gotcha) before
+  concluding the code is broken.
+
 ## Commands
 - Build client: `bun run --filter '@grindform/web' build`
 - Responsive e2e only, mobile engines:
