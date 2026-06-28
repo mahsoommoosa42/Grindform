@@ -3,7 +3,12 @@
 # Builds the Lit client, then runs the Bun/Hono server which serves both
 # the static client and the JSON API from one process. PGlite keeps all
 # data inside the container, so point GRINDFORM_DATA_DIR at a mounted
-# volume to persist plans + logs across restarts.
+# volume to persist plans + logs across restarts. GRINDFORM_DATA_DIR points
+# at a *subdirectory* of the mount (not the mount root): PGlite's initdb
+# requires an empty data directory, and ext4 volumes (e.g. Railway, Fly)
+# carry a lost+found entry at their root that would otherwise abort initdb.
+# On Railway, attach a Railway Volume at /data (the Dockerfile VOLUME
+# instruction is unsupported there and intentionally omitted).
 
 FROM oven/bun:1.3.13 AS build
 WORKDIR /app
@@ -12,9 +17,11 @@ WORKDIR /app
 # caching), then copy the source and build the browser bundle.
 COPY package.json bun.lock ./
 COPY packages/api/package.json packages/api/package.json
+COPY packages/auth/package.json packages/auth/package.json
 COPY packages/catalog/package.json packages/catalog/package.json
 COPY packages/core/package.json packages/core/package.json
 COPY packages/db/package.json packages/db/package.json
+COPY packages/loadcalc/package.json packages/loadcalc/package.json
 COPY packages/planner/package.json packages/planner/package.json
 COPY packages/tracker/package.json packages/tracker/package.json
 COPY packages/web/package.json packages/web/package.json
@@ -32,8 +39,7 @@ COPY --from=build /app /app
 WORKDIR /app/packages/web
 
 ENV PORT=3000
-ENV GRINDFORM_DATA_DIR=/data
-VOLUME ["/data"]
+ENV GRINDFORM_DATA_DIR=/data/pgdata
 EXPOSE 3000
 
 CMD ["bun", "run", "src/server.ts"]
