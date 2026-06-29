@@ -705,3 +705,73 @@ describe('Plan slot edits (swap / add / remove)', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('Restore day sessions (undo/redo)', () => {
+  let app: Hono<AppEnv>;
+  let client: Client;
+  let dispose: () => Promise<void>;
+
+  beforeEach(async () => {
+    ({ app, dispose } = await freshApp());
+    client = await registerClient(app);
+  });
+  afterEach(async () => {
+    await dispose();
+  });
+
+  it('restores a day to a prior sessions snapshot (undo of a swap)', async () => {
+    const plan = await makePlan(client);
+    const dayId = plan.days[0]!.id;
+    // The full sessions object the server returned (training + external),
+    // captured before any edit — this is exactly what the client replays.
+    const snapshot = plan.days[0]!.sessions;
+    const slot = aSlot(plan);
+    const swap = await client.json(
+      `/v1/plans/${plan.id}/days/${dayId}/slots/${slot.id}/swap`,
+      'PUT',
+      { exercise: { source: 'catalog', slug: 'barbell-hip-thrust' } },
+    );
+    expect(swap.status).toBe(200);
+    // Replay the pre-swap snapshot.
+    const res = await client.json(`/v1/plans/${plan.id}/days/${dayId}/sessions`, 'PUT', {
+      sessions: snapshot,
+    });
+    expect(res.status).toBe(200);
+    const restored = ((await res.json()) as { plan: FullPlan }).plan;
+    const back = trainingSession(restored)
+      .blocks?.flatMap((b) => b.slots)
+      .find((s) => s.id === slot.id);
+    expect(back?.exerciseSlug).toBe(slot.exerciseSlug);
+    // The external run session survives the round-trip too.
+    expect(restored.days[0]!.sessions.some((s) => s.kind === 'external')).toBe(true);
+  });
+
+  it('400s on a malformed sessions body', async () => {
+    const plan = await makePlan(client);
+    const dayId = plan.days[0]!.id;
+    const res = await client.json(`/v1/plans/${plan.id}/days/${dayId}/sessions`, 'PUT', {
+      sessions: [{ kind: 'training' }],
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('404s restoring a day on a plan the caller does not own', async () => {
+    const plan = await makePlan(client);
+    const dayId = plan.days[0]!.id;
+    const other = await registerClient(app, 'mallory-restore@example.com');
+    const res = await other.json(`/v1/plans/${plan.id}/days/${dayId}/sessions`, 'PUT', {
+      sessions: plan.days[0]!.sessions,
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('404s restoring an unknown day', async () => {
+    const plan = await makePlan(client);
+    const res = await client.json(
+      `/v1/plans/${plan.id}/days/day_${'0'.repeat(26)}/sessions`,
+      'PUT',
+      { sessions: [] },
+    );
+    expect(res.status).toBe(404);
+  });
+});

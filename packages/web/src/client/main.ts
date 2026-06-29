@@ -413,6 +413,9 @@ export class GfApp extends LitElement {
     variation: { state: true },
     days: { state: true },
     plan: { state: true },
+    undoStack: { state: true },
+    redoStack: { state: true },
+    historyBusy: { state: true },
     selectedDayId: { state: true },
     progress: { state: true },
     dayVolume: { state: true },
@@ -463,6 +466,12 @@ export class GfApp extends LitElement {
   declare variation: 'A' | 'B';
   declare days: DayConfig[];
   declare plan: WeeklyPlan | null;
+  /** Past plan states for undo (most recent last); see {@link recordEdit}. */
+  declare undoStack: WeeklyPlan[];
+  /** Undone plan states available to redo (most recent last). */
+  declare redoStack: WeeklyPlan[];
+  /** True while an undo/redo restore request is in flight. */
+  declare historyBusy: boolean;
   declare selectedDayId: string | null;
   declare progress: Record<string, DayProgress>;
   /** Per-day volume summaries, keyed by day id. */
@@ -530,6 +539,9 @@ export class GfApp extends LitElement {
       ),
     }));
     this.plan = null;
+    this.undoStack = [];
+    this.redoStack = [];
+    this.historyBusy = false;
     this.selectedDayId = null;
     this.progress = {};
     this.dayVolume = {};
@@ -649,6 +661,7 @@ export class GfApp extends LitElement {
   private resetToAuth(): void {
     this.user = null;
     this.plan = null;
+    this.resetHistory();
     this.progress = {};
     this.dayVolume = {};
     this.weekVolume = null;
@@ -865,6 +878,7 @@ export class GfApp extends LitElement {
         seed: Math.floor(Math.random() * 0x7fffffff),
       });
       this.plan = plan;
+      this.resetHistory();
       this.progress = {};
       this.dayVolume = {};
       this.weekVolume = null;
@@ -1014,17 +1028,107 @@ export class GfApp extends LitElement {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Undo / redo of plan edits (swap / add / remove).
+  //
+  // The history holds whole-plan snapshots: `recordEdit(before)` is called
+  // with the plan as it was *before* an edit, pushing it onto the undo stack
+  // and clearing the redo stack (a new edit forks history). Undo/redo replay
+  // a snapshot by restoring just the day(s) that differ via the server, so
+  // the persisted plan stays in step with the UI across reloads.
+  // -------------------------------------------------------------------------
+
+  /** Largest number of undo steps kept; older edits fall off the bottom. */
+  private static readonly MAX_HISTORY = 50;
+
+  get canUndo(): boolean {
+    return this.undoStack.length > 0 && !this.historyBusy;
+  }
+
+  get canRedo(): boolean {
+    return this.redoStack.length > 0 && !this.historyBusy;
+  }
+
+  /** Record the pre-edit plan so the edit that follows can be undone. */
+  private recordEdit(before: WeeklyPlan): void {
+    this.undoStack = [...this.undoStack, before].slice(-GfApp.MAX_HISTORY);
+    this.redoStack = [];
+  }
+
+  /** Clear all edit history (on (re)generate and on sign-out). */
+  private resetHistory(): void {
+    this.undoStack = [];
+    this.redoStack = [];
+  }
+
+  /**
+   * Restore the plan to `target` by replaying, via the server, every day
+   * whose sessions differ from the current plan. Returns the refreshed plan.
+   */
+  private async restoreSnapshot(current: WeeklyPlan, target: WeeklyPlan): Promise<WeeklyPlan> {
+    let latest = current;
+    for (const day of target.days) {
+      const live = current.days.find((d) => d.id === day.id);
+      if (live !== undefined && JSON.stringify(live.sessions) === JSON.stringify(day.sessions)) {
+        continue;
+      }
+      const { plan } = await api.restoreDaySessions(target.id, day.id, day.sessions);
+      latest = plan;
+    }
+    return latest;
+  }
+
+  /** Step back to the previous plan state. */
+  private async undo(): Promise<void> {
+    if (this.plan === null || this.undoStack.length === 0 || this.historyBusy) return;
+    const current = this.plan;
+    const target = this.undoStack[this.undoStack.length - 1] as WeeklyPlan;
+    this.historyBusy = true;
+    this.error = null;
+    try {
+      const restored = await this.restoreSnapshot(current, target);
+      this.undoStack = this.undoStack.slice(0, -1);
+      this.redoStack = [...this.redoStack, current];
+      this.applyEditedPlan(restored);
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not undo.';
+    } finally {
+      this.historyBusy = false;
+    }
+  }
+
+  /** Re-apply the most recently undone plan state. */
+  private async redo(): Promise<void> {
+    if (this.plan === null || this.redoStack.length === 0 || this.historyBusy) return;
+    const current = this.plan;
+    const target = this.redoStack[this.redoStack.length - 1] as WeeklyPlan;
+    this.historyBusy = true;
+    this.error = null;
+    try {
+      const restored = await this.restoreSnapshot(current, target);
+      this.redoStack = this.redoStack.slice(0, -1);
+      this.undoStack = [...this.undoStack, current];
+      this.applyEditedPlan(restored);
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not redo.';
+    } finally {
+      this.historyBusy = false;
+    }
+  }
+
   /** Resolve the picker's chosen exercise and call the matching edit endpoint. */
   private async chooseExercise(ref: ExerciseRef): Promise<void> {
     const picker = this.picker;
     if (picker === null || this.plan === null) return;
     this.pickerBusy = true;
     this.pickerError = null;
+    const before = this.plan;
     try {
       const { plan } =
         picker.mode === 'swap'
           ? await api.swapSlot(this.plan.id, picker.dayId, picker.slotId as string, ref)
           : await api.addSlot(this.plan.id, picker.dayId, picker.sessionId as string, ref);
+      this.recordEdit(before);
       this.applyEditedPlan(plan);
       this.closePicker();
     } catch (err) {
@@ -1036,8 +1140,10 @@ export class GfApp extends LitElement {
   /** Remove an exercise slot from a day (after a confirm). */
   private async onRemoveSlot(dayId: string, slotId: string): Promise<void> {
     if (this.plan === null) return;
+    const before = this.plan;
     try {
       const { plan } = await api.removeSlot(this.plan.id, dayId, slotId);
+      this.recordEdit(before);
       this.applyEditedPlan(plan);
     } catch (err) {
       this.error = err instanceof ApiError ? err.message : 'Could not remove the exercise.';
@@ -1474,8 +1580,42 @@ export class GfApp extends LitElement {
           <span class="logo">◣</span>
           <span class="wordmark">Grind<em>form</em></span>
         </div>
-        ${this.renderNav()} ${this.renderAccountControl()}
+        ${this.renderNav()} ${this.renderHistoryControls()} ${this.renderAccountControl()}
       </header>
+    `;
+  }
+
+  /**
+   * Undo / redo of plan edits, anchored in the top bar. Both buttons always
+   * occupy their slot — when an action isn't available the button is hidden
+   * with `visibility: hidden` (its space is kept) so the bar never shifts as
+   * availability toggles. Only shown once signed in.
+   */
+  private renderHistoryControls(): TemplateResult {
+    if (this.user === null) return html`${nothing}`;
+    return html`
+      <div class="history" data-testid="history-controls">
+        <button
+          class=${this.canUndo ? 'icon-btn' : 'icon-btn vh'}
+          data-testid="undo"
+          title="Undo"
+          aria-label="Undo last edit"
+          ?disabled=${!this.canUndo}
+          @click=${() => void this.undo()}
+        >
+          ↶
+        </button>
+        <button
+          class=${this.canRedo ? 'icon-btn' : 'icon-btn vh'}
+          data-testid="redo"
+          title="Redo"
+          aria-label="Redo last undone edit"
+          ?disabled=${!this.canRedo}
+          @click=${() => void this.redo()}
+        >
+          ↷
+        </button>
+      </div>
     `;
   }
 
@@ -2762,6 +2902,42 @@ export class GfApp extends LitElement {
       gap: 6px;
       margin-left: auto;
     }
+    .history {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .icon-btn {
+      appearance: none;
+      width: 36px;
+      height: 36px;
+      min-height: 36px;
+      border-radius: var(--gf-radius-sm);
+      border: 1px solid var(--gf-border);
+      background: var(--gf-surface-2, var(--gf-surface));
+      color: var(--gf-text);
+      font-size: 1.15rem;
+      line-height: 1;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition:
+        border-color var(--gf-speed) var(--gf-ease),
+        color var(--gf-speed) var(--gf-ease);
+    }
+    .icon-btn:hover:not(:disabled) {
+      border-color: var(--gf-accent);
+      color: var(--gf-accent);
+    }
+    .icon-btn:disabled {
+      cursor: default;
+    }
+    /* Keep the button's footprint while hidden, so the bar never reflows as
+       undo/redo availability toggles. */
+    .icon-btn.vh {
+      visibility: hidden;
+    }
     .tab {
       appearance: none;
       border: 1px solid transparent;
@@ -2851,7 +3027,7 @@ export class GfApp extends LitElement {
     }
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
       gap: 12px;
     }
     .field {
@@ -3202,8 +3378,11 @@ export class GfApp extends LitElement {
     }
     .week-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 12px;
+      /* Roomy cards: a comfortable min width with a min(100%, …) guard so a
+         narrow phone never overflows. ~1 col on phone, ~2 on iPad, ~3 on
+         desktop, instead of cramming 4 thin columns. */
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+      gap: 16px;
     }
     .card {
       background: var(--gf-surface);
@@ -3310,7 +3489,7 @@ export class GfApp extends LitElement {
     }
     .slot-name {
       font-weight: 600;
-      overflow-wrap: anywhere;
+      overflow-wrap: break-word;
     }
     .slot-scheme {
       color: var(--gf-muted);

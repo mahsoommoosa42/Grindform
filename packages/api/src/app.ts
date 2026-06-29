@@ -77,6 +77,7 @@ import {
   ExerciseQuerySchema,
   LogSetBodySchema,
   parseOrThrow,
+  RestoreDaySessionsBodySchema,
   SettingsBodySchema,
   SlotIdParamSchema,
   SwapSlotBodySchema,
@@ -353,6 +354,20 @@ export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
     const slotId = parseOrThrow(SlotIdParamSchema, c.req.param('slotId'), 'slot id');
     const updated = removeSlot(day, slotId);
     if (updated === undefined) throw new NotFoundError('slot not found', { slotId });
+    return c.json({ plan: await persistDay(db, userId, updated, plan.id) });
+  });
+
+  // Restore a day's sessions to a prior snapshot. Powers multi-step
+  // undo/redo of the swap/add/remove edits: the client holds the snapshots
+  // and replays them here, so the persisted plan stays in step with the UI
+  // across reloads. The body is validated like any other network input.
+  app.put('/v1/plans/:planId/days/:dayId/sessions', guard, async (c) => {
+    const userId = c.get('auth').userId;
+    const { plan, day } = await loadDay(db, userId, c.req.param('planId'), c.req.param('dayId'));
+    const body = parseOrThrow(RestoreDaySessionsBodySchema, await c.req.json(), 'sessions body');
+    const sessions = body.sessions as unknown as PlanDay['sessions'];
+    const estMinutes = sessions.reduce((sum, s) => sum + s.estMinutes, 0);
+    const updated: PlanDay = { ...day, sessions, estMinutes };
     return c.json({ plan: await persistDay(db, userId, updated, plan.id) });
   });
 

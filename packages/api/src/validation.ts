@@ -10,11 +10,13 @@
 import { z } from 'zod';
 
 import {
+  BlockTypeSchema,
   CustomExerciseInputSchema,
   EquipmentSchema,
   ExerciseRoleSchema,
   ExerciseSlugSchema,
   ExperienceSchema,
+  ExternalActivitySchema,
   GoalSchema,
   isCustomExerciseId,
   isDayId,
@@ -22,6 +24,7 @@ import {
   isSlotId,
   MovementPatternSchema,
   MuscleGroupSchema,
+  RepSchemeSchema,
   ThemeIdSchema,
   ValidationError,
 } from '@grindform/core';
@@ -85,6 +88,69 @@ export const AddSlotBodySchema = z.object({
 
 /** Body for creating/updating a custom exercise. */
 export const CustomExerciseBodySchema = CustomExerciseInputSchema;
+
+// ---------------------------------------------------------------------------
+// Restore-day-sessions body (undo/redo). The client replays a prior
+// snapshot of one day's sessions — a state the server itself produced — so
+// the schema mirrors the planner's *output* shape and is validated strictly
+// before it is persisted, exactly like any other network input.
+// ---------------------------------------------------------------------------
+
+const SupersetRefSnapshotSchema = z.object({
+  group: z.string().min(1).max(8),
+  order: z.number().int().min(1).max(12),
+});
+
+const ExerciseSlotSnapshotSchema = z.object({
+  id: SlotIdParamSchema,
+  exerciseSlug: ExerciseSlugSchema,
+  name: z.string().min(1).max(120),
+  scheme: RepSchemeSchema,
+  primaryMuscles: z.array(MuscleGroupSchema).max(8),
+  pyramid: z.boolean().optional(),
+  superset: SupersetRefSnapshotSchema.optional(),
+  cue: z.string().min(1).max(400).optional(),
+});
+
+const SessionBlockSnapshotSchema = z.object({
+  type: BlockTypeSchema,
+  title: z.string().min(1).max(80),
+  estMinutes: z.number().int().min(0).max(600),
+  slots: z.array(ExerciseSlotSnapshotSchema).max(40),
+  note: z.string().min(1).max(400).optional(),
+});
+
+const TrainingSessionSnapshotSchema = z.object({
+  id: PlanSessionIdSchema,
+  kind: z.literal('training'),
+  label: z.string().min(1).max(60).optional(),
+  focus: z.array(MuscleGroupSchema).max(8),
+  blocks: z.array(SessionBlockSnapshotSchema).max(12),
+  estMinutes: z.number().int().min(0).max(600),
+});
+
+const ExternalSessionSnapshotSchema = z.object({
+  id: PlanSessionIdSchema,
+  kind: z.literal('external'),
+  activity: ExternalActivitySchema,
+  label: z.string().min(1).max(60).optional(),
+  plannedMinutes: z.number().int().min(0).max(600),
+  estMinutes: z.number().int().min(0).max(600),
+});
+
+const PlanSessionSnapshotSchema = z.discriminatedUnion('kind', [
+  TrainingSessionSnapshotSchema,
+  ExternalSessionSnapshotSchema,
+]);
+
+/**
+ * Body for restoring a day's sessions to a prior snapshot (undo/redo). At
+ * most four sessions per day, matching {@link DaySpecSchema}.
+ */
+export const RestoreDaySessionsBodySchema = z.object({
+  sessions: z.array(PlanSessionSnapshotSchema).max(4),
+});
+export type RestoreDaySessionsBody = z.infer<typeof RestoreDaySessionsBodySchema>;
 
 /** Query string for `GET /v1/exercises` (all filters optional). */
 export const ExerciseQuerySchema = z.object({

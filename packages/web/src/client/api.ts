@@ -143,6 +143,21 @@ export const removeSlot = (
 ): Promise<{ plan: WeeklyPlan }> =>
   request(`/v1/plans/${planId}/days/${dayId}/slots/${slotId}`, { method: 'DELETE' });
 
+/**
+ * Restore a day's sessions to a prior snapshot. Powers undo/redo of the
+ * swap/add/remove edits — the client holds the snapshots and replays the
+ * one whose day changed.
+ */
+export const restoreDaySessions = (
+  planId: string,
+  dayId: string,
+  sessions: WeeklyPlan['days'][number]['sessions'],
+): Promise<{ plan: WeeklyPlan }> =>
+  request(`/v1/plans/${planId}/days/${dayId}/sessions`, {
+    method: 'PUT',
+    body: JSON.stringify({ sessions }),
+  });
+
 /** Read persisted settings (theme + preferences). */
 export const getSettings = (): Promise<{ settings: Settings }> => request('/v1/settings');
 
