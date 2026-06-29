@@ -43,8 +43,8 @@ test('visiting a verify link marks the account as verified', async ({ page, requ
   const { url } = (await hookRes.json()) as { url: string | null };
   expect(url).toBeTruthy();
 
-  // Extract the raw token from the verification URL.
-  const verifyUrl = new URL(url!);
+  // Extract the raw token from the verification URL (may be relative).
+  const verifyUrl = new URL(url!, 'http://localhost');
   const token = verifyUrl.searchParams.get('verify')!;
   expect(token).toBeTruthy();
 
