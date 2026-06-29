@@ -128,6 +128,46 @@ Physio placement select with values 0=Before warm-up … 4=At the end). Full pla
   running old schema/planner code. Restart the server (see stale-server gotcha) before
   concluding the code is broken.
 
+## Inline week-view editing + undo/redo — what to verify
+The **My week** cards now list exercises inline (no need to open Track). Each
+training slot row has a swap `↻` and remove `✕`; each session has `+ Add exercise`.
+Undo/redo `↶`/`↷` controls live in the top bar (`data-testid="history-controls"`).
+Concrete assertions:
+- **Remove/swap/add** mutate the card immediately and adjust the block + day minutes
+  (e.g. removing one of two Main lifts: 24m→12m, day total drops). Swap opens a
+  picker — search filters the common index; picking replaces just that slot's name.
+- **Undo/redo visibility:** `↶`/`↷` are `visibility:hidden` (space reserved) when
+  unavailable, visible when available. After the first edit `↶` appears; after an
+  undo `↷` appears; when the undo stack empties `↶` hides again. A **fresh edit
+  clears the redo stack** (`↷` hides immediately).
+- **Multi-step:** undo walks back through every edit in reverse, redo re-applies.
+  Both can be visible at once when you're mid-history.
+- **Layout stability (explicit user ask):** the account avatar / nav must NOT shift
+  x-position as `↶`/`↷` toggle — they use reserved-space `visibility:hidden`, so the
+  top bar never reflows. Verify by comparing the avatar position across the
+  no-button / `↶`-only / `↶`+`↷` states.
+- **Gotcha:** undo/redo POST to `PUT /v1/plans/:planId/days/:dayId/sessions`. A
+  **stale server** (started before that API route was added) returns a plain 404 →
+  the UI shows "Could not undo." Restart the server (see stale-server gotcha) and
+  confirm the route returns 200 (`curl`/console replay of `day.sessions`) before
+  concluding the feature is broken — this is an environment artifact, not a code bug.
+
+## Responsive grid roominess (week view)
+The week grid must NOT pack 4 cramped day columns on tablets. Verify across widths
+via the DevTools device dropdown: **iPad Air (820px)** → ~2 roomy columns (not 4),
+long exercise names wrap on word boundaries (no mid-word break like
+"Convention/al"); **iPhone (430px)** → single full-width column, no horizontal
+overflow.
+
+## Gotcha: clearing Lit-controlled inputs (signup/login/search fields)
+The auth + search inputs are **controlled Lit fields** that reset the caret/selection
+on every `input` event, so `Ctrl+A` then type/Delete does NOT replace the contents —
+the new text gets concatenated onto the old value (you'll see garbage like
+`er@grindform.testTestpass123` in the email field). To clear reliably: focus the
+field, press `End`, then send repeated `BackSpace` keys (one per character) before
+typing the intended value. Re-read the field's `text=` in the stripped DOM to
+confirm it's clean before submitting.
+
 ## Commands
 - Build client: `bun run --filter '@grindform/web' build`
 - Responsive e2e only, mobile engines:
