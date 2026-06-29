@@ -10,19 +10,22 @@
 import { z } from 'zod';
 
 import {
+  CustomExerciseInputSchema,
   EquipmentSchema,
   ExerciseRoleSchema,
   ExerciseSlugSchema,
   ExperienceSchema,
   GoalSchema,
+  isCustomExerciseId,
   isDayId,
+  isPlanSessionId,
   isSlotId,
   MovementPatternSchema,
   MuscleGroupSchema,
   ThemeIdSchema,
   ValidationError,
 } from '@grindform/core';
-import type { DayId, SlotId } from '@grindform/core';
+import type { CustomExerciseId, DayId, PlanSessionId, SlotId } from '@grindform/core';
 
 /** Parse `data` with `schema`, throwing a 400-mapped error on failure. */
 export const parseOrThrow = <S extends z.ZodTypeAny>(
@@ -48,6 +51,40 @@ export const SlotIdParamSchema = z
   .string()
   .refine(isSlotId, { message: 'invalid SlotId' })
   .transform((s): SlotId => s as SlotId);
+
+/** A `pss_…` path/body parameter (a session within a plan day). */
+export const PlanSessionIdSchema = z
+  .string()
+  .refine(isPlanSessionId, { message: 'invalid PlanSessionId' })
+  .transform((s): PlanSessionId => s as PlanSessionId);
+
+/** A `cex_…` path parameter (a user's custom exercise). */
+export const CustomExerciseIdParamSchema = z
+  .string()
+  .refine(isCustomExerciseId, { message: 'invalid CustomExerciseId' })
+  .transform((s): CustomExerciseId => s as CustomExerciseId);
+
+/**
+ * A reference to an exercise the user is swapping/adding — either a catalog
+ * movement (by slug) or one of their own custom exercises (by id).
+ */
+export const ExerciseRefSchema = z.discriminatedUnion('source', [
+  z.object({ source: z.literal('catalog'), slug: ExerciseSlugSchema }),
+  z.object({ source: z.literal('custom'), id: CustomExerciseIdParamSchema }),
+]);
+export type ExerciseRef = z.infer<typeof ExerciseRefSchema>;
+
+/** Body for swapping a slot's exercise for another. */
+export const SwapSlotBodySchema = z.object({ exercise: ExerciseRefSchema });
+
+/** Body for adding an extra exercise to a day's training session. */
+export const AddSlotBodySchema = z.object({
+  sessionId: PlanSessionIdSchema,
+  exercise: ExerciseRefSchema,
+});
+
+/** Body for creating/updating a custom exercise. */
+export const CustomExerciseBodySchema = CustomExerciseInputSchema;
 
 /** Query string for `GET /v1/exercises` (all filters optional). */
 export const ExerciseQuerySchema = z.object({

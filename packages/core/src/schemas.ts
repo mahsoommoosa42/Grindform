@@ -11,7 +11,7 @@
 import { z } from 'zod';
 
 import { isExerciseSlug, isPlanId } from './ids.ts';
-import type { ExerciseSlug, PlanId } from './ids.ts';
+import type { CustomExerciseId, ExerciseSlug, PlanId } from './ids.ts';
 
 // ---------------------------------------------------------------------------
 // Calendar.
@@ -83,6 +83,37 @@ export type MovementPattern = z.infer<typeof MovementPatternSchema>;
 /** Role an exercise plays in a session — compound main lift vs accessory. */
 export const ExerciseRoleSchema = z.enum(['main', 'accessory', 'conditioning', 'mobility']);
 export type ExerciseRole = z.infer<typeof ExerciseRoleSchema>;
+
+// ---------------------------------------------------------------------------
+// Custom exercises (user-authored).
+// ---------------------------------------------------------------------------
+
+/** Longest display name allowed for a user-authored custom exercise. */
+export const CUSTOM_EXERCISE_NAME_MAX = 80;
+
+/**
+ * Fields a user supplies to define their own exercise. Custom exercises are
+ * stored per-account and tracked individually; they are deliberately kept
+ * out of the global {@link MuscleGroup}-indexed catalog the generator draws
+ * from, so they never affect other users or auto-generated plans. The shape
+ * mirrors the subset of a catalog `Exercise` the planner needs to build a
+ * slot (name, muscles, role, unilateral, cue).
+ */
+export const CustomExerciseInputSchema = z.object({
+  name: z.string().trim().min(2).max(CUSTOM_EXERCISE_NAME_MAX),
+  primaryMuscles: z.array(MuscleGroupSchema).min(1).max(6),
+  secondaryMuscles: z.array(MuscleGroupSchema).max(6).default([]),
+  equipment: z.array(EquipmentSchema).min(1).max(7).default(['bodyweight']),
+  role: ExerciseRoleSchema.default('accessory'),
+  unilateral: z.boolean().default(false),
+  cue: z.string().trim().max(200).optional(),
+});
+export type CustomExerciseInput = z.infer<typeof CustomExerciseInputSchema>;
+
+/** A stored custom exercise: the user's input plus its assigned id. */
+export interface CustomExercise extends CustomExerciseInput {
+  readonly id: CustomExerciseId;
+}
 
 // ---------------------------------------------------------------------------
 // Session structure.

@@ -6,7 +6,16 @@
  */
 
 export * as schema from './schema/index.ts';
-export { auditLog, planDays, plans, sessions, setLogs, settings, users } from './schema/tables.ts';
+export {
+  auditLog,
+  customExercises,
+  planDays,
+  plans,
+  sessions,
+  setLogs,
+  settings,
+  users,
+} from './schema/tables.ts';
 export type { Db, DbOrTx, DbTx } from './client.ts';
 export { applyMigrations, splitStatements } from './migrate.ts';
 export type { Migration } from './migrate.ts';
@@ -21,8 +30,15 @@ export {
   listPlanIdsForUser,
   listPlanSummaries,
   planBelongsToUser,
+  updateDaySessions,
 } from './repos/plans-repo.ts';
 export type { PlanSummary } from './repos/plans-repo.ts';
+export {
+  createCustomExercise,
+  deleteCustomExercise,
+  getCustomExercise,
+  listCustomExercises,
+} from './repos/custom-exercises-repo.ts';
 export { deleteLog, listLogsForDay, listLogsForExercise, logSet } from './repos/logs-repo.ts';
 export type { NewSetLog, SetLog } from './repos/logs-repo.ts';
 export { getSettings, upsertSettings } from './repos/settings-repo.ts';

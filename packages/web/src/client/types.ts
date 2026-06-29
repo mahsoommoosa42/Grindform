@@ -42,6 +42,62 @@ export type MuscleGroup =
   | 'core'
   | 'full_body';
 export type BlockType = 'warmup' | 'physio' | 'main' | 'accessory' | 'cooldown';
+export type ExerciseRole = 'main' | 'accessory' | 'conditioning' | 'mobility';
+export type MovementPattern =
+  | 'squat'
+  | 'hinge'
+  | 'lunge'
+  | 'horizontal_push'
+  | 'vertical_push'
+  | 'horizontal_pull'
+  | 'vertical_pull'
+  | 'carry'
+  | 'core'
+  | 'isolation'
+  | 'conditioning';
+
+/** A built-in catalog exercise (the shared, global index). */
+export interface CatalogExercise {
+  readonly slug: string;
+  readonly name: string;
+  readonly primaryMuscles: readonly MuscleGroup[];
+  readonly secondaryMuscles: readonly MuscleGroup[];
+  readonly equipment: readonly Equipment[];
+  readonly pattern: MovementPattern;
+  readonly role: ExerciseRole;
+  readonly unilateral: boolean;
+  readonly minExperience: Experience;
+  readonly goals: readonly Goal[];
+  readonly cue?: string;
+}
+
+/** A user-authored custom exercise (per account, never in the global index). */
+export interface CustomExercise {
+  readonly id: string;
+  readonly name: string;
+  readonly primaryMuscles: readonly MuscleGroup[];
+  readonly secondaryMuscles: readonly MuscleGroup[];
+  readonly equipment: readonly Equipment[];
+  readonly role: ExerciseRole;
+  readonly unilateral: boolean;
+  readonly cue?: string;
+}
+
+/** Input to create a custom exercise. */
+export interface CustomExerciseInput {
+  readonly name: string;
+  readonly primaryMuscles: MuscleGroup[];
+  readonly secondaryMuscles?: MuscleGroup[];
+  readonly equipment?: Equipment[];
+  readonly role?: ExerciseRole;
+  readonly unilateral?: boolean;
+  readonly cue?: string;
+}
+
+/** A reference to an exercise being swapped/added (catalog slug or custom id). */
+export type ExerciseRef =
+  | { readonly source: 'catalog'; readonly slug: string }
+  | { readonly source: 'custom'; readonly id: string };
 
 export interface RepScheme {
   readonly sets: number;

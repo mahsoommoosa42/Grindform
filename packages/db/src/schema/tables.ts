@@ -8,17 +8,29 @@
  * verbatim — the plan is generated once and rendered many times.
  */
 
-import { doublePrecision, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  doublePrecision,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+} from 'drizzle-orm/pg-core';
 
 import type {
   AccountStatus,
   AuditAction,
   AuditId,
+  CustomExerciseId,
   DayId,
+  Equipment,
+  ExerciseRole,
   ExerciseSlug,
   Experience,
   Goal,
   LogId,
+  MuscleGroup,
   PlanId,
   Role,
   SessionId,
@@ -111,6 +123,27 @@ export const setLogs = pgTable('set_logs', {
   loadKg: doublePrecision('load_kg').notNull(),
   rpe: doublePrecision('rpe'),
   completedAt: timestamp('completed_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * A user-authored custom exercise. Scoped to its owner and tracked
+ * individually; deliberately separate from the code-defined catalog so
+ * custom movements never enter the global, generator-facing index.
+ */
+export const customExercises = pgTable('custom_exercises', {
+  id: text('id').primaryKey().$type<CustomExerciseId>(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' })
+    .$type<UserId>(),
+  name: text('name').notNull(),
+  primaryMuscles: jsonb('primary_muscles').notNull().$type<MuscleGroup[]>(),
+  secondaryMuscles: jsonb('secondary_muscles').notNull().$type<MuscleGroup[]>(),
+  equipment: jsonb('equipment').notNull().$type<Equipment[]>(),
+  role: text('role').notNull().$type<ExerciseRole>(),
+  unilateral: boolean('unilateral').notNull(),
+  cue: text('cue'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /** Per-user app settings (single-user MVP keys on a fixed user id). */

@@ -427,3 +427,280 @@ describe('Grindform API', () => {
     });
   });
 });
+
+interface FullPlan {
+  id: string;
+  goal: string;
+  days: {
+    id: string;
+    sessions: {
+      id: string;
+      kind: string;
+      blocks?: { type: string; slots: { id: string; exerciseSlug: string; name: string }[] }[];
+    }[];
+  }[];
+}
+
+interface CustomExerciseResponse {
+  exercise: { id: string; name: string; role: string };
+}
+
+const validCustom = {
+  name: 'Banded glute bridge',
+  primaryMuscles: ['glutes'],
+  secondaryMuscles: ['hamstrings'],
+  equipment: ['band'],
+  role: 'accessory',
+  unilateral: false,
+  cue: 'Drive through the heels.',
+};
+
+const planWith = {
+  goal: 'build_muscle',
+  days: [
+    {
+      weekday: 'mon',
+      sessions: [
+        { kind: 'training', focus: ['glutes', 'back'] },
+        { kind: 'external', activity: 'run', plannedMinutes: 20 },
+      ],
+    },
+  ],
+};
+
+const makePlan = async (client: Client): Promise<FullPlan> => {
+  const res = await client.json('/v1/plans', 'POST', planWith);
+  expect(res.status).toBe(201);
+  return ((await res.json()) as { plan: FullPlan }).plan;
+};
+
+const trainingSession = (plan: FullPlan): FullPlan['days'][number]['sessions'][number] => {
+  const session = plan.days[0]!.sessions.find((s) => s.kind === 'training');
+  if (session === undefined) throw new Error('no training session');
+  return session;
+};
+
+const externalSession = (plan: FullPlan): FullPlan['days'][number]['sessions'][number] => {
+  const session = plan.days[0]!.sessions.find((s) => s.kind === 'external');
+  if (session === undefined) throw new Error('no external session');
+  return session;
+};
+
+const aSlot = (plan: FullPlan): { id: string; exerciseSlug: string } => {
+  const slot = trainingSession(plan).blocks?.flatMap((b) => b.slots)[0];
+  if (slot === undefined) throw new Error('no slot');
+  return slot;
+};
+
+const allSlugs = (plan: FullPlan): string[] =>
+  trainingSession(plan).blocks?.flatMap((b) => b.slots.map((s) => s.exerciseSlug)) ?? [];
+
+describe('Custom exercises', () => {
+  let app: Hono<AppEnv>;
+  let client: Client;
+  let dispose: () => Promise<void>;
+
+  beforeEach(async () => {
+    ({ app, dispose } = await freshApp());
+    client = await registerClient(app);
+  });
+  afterEach(async () => {
+    await dispose();
+  });
+
+  it('creates, lists, and deletes a custom exercise (scoped to the account)', async () => {
+    const created = await client.json('/v1/exercises/custom', 'POST', validCustom);
+    expect(created.status).toBe(201);
+    const { exercise } = (await created.json()) as CustomExerciseResponse;
+    expect(exercise.id.startsWith('cex_')).toBe(true);
+
+    const list = await client.request('/v1/exercises/custom');
+    const body = (await list.json()) as { exercises: { id: string }[] };
+    expect(body.exercises.map((e) => e.id)).toEqual([exercise.id]);
+
+    // A second account cannot see it.
+    const other = await registerClient(app, 'other@example.com');
+    const otherList = await other.request('/v1/exercises/custom');
+    expect(((await otherList.json()) as { exercises: unknown[] }).exercises).toEqual([]);
+
+    // Deleting another account's exercise reports 404; the owner's delete works.
+    expect((await other.json(`/v1/exercises/custom/${exercise.id}`, 'DELETE', {})).status).toBe(404);
+    const del = await client.json(`/v1/exercises/custom/${exercise.id}`, 'DELETE', {});
+    expect(del.status).toBe(204);
+    const afterList = await client.request('/v1/exercises/custom');
+    expect(((await afterList.json()) as { exercises: unknown[] }).exercises).toEqual([]);
+  });
+
+  it('rejects an invalid custom-exercise body with 400', async () => {
+    const res = await client.json('/v1/exercises/custom', 'POST', { name: '' });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a malformed custom-exercise id with 400', async () => {
+    const res = await client.json('/v1/exercises/custom/not-an-id', 'DELETE', {});
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('Plan slot edits (swap / add / remove)', () => {
+  let app: Hono<AppEnv>;
+  let client: Client;
+  let dispose: () => Promise<void>;
+
+  beforeEach(async () => {
+    ({ app, dispose } = await freshApp());
+    client = await registerClient(app);
+  });
+  afterEach(async () => {
+    await dispose();
+  });
+
+  it('swaps a slot for a catalog exercise, preserving the slot id', async () => {
+    const plan = await makePlan(client);
+    const slot = aSlot(plan);
+    const res = await client.json(
+      `/v1/plans/${plan.id}/days/${plan.days[0]!.id}/slots/${slot.id}/swap`,
+      'PUT',
+      { exercise: { source: 'catalog', slug: 'barbell-hip-thrust' } },
+    );
+    expect(res.status).toBe(200);
+    const updated = ((await res.json()) as { plan: FullPlan }).plan;
+    const swapped = trainingSession(updated)
+      .blocks?.flatMap((b) => b.slots)
+      .find((s) => s.id === slot.id);
+    expect(swapped?.exerciseSlug).toBe('barbell-hip-thrust');
+  });
+
+  it('swaps a slot for a custom exercise (synthetic custom- slug)', async () => {
+    const plan = await makePlan(client);
+    const slot = aSlot(plan);
+    const { exercise } = (await (
+      await client.json('/v1/exercises/custom', 'POST', validCustom)
+    ).json()) as CustomExerciseResponse;
+    const res = await client.json(
+      `/v1/plans/${plan.id}/days/${plan.days[0]!.id}/slots/${slot.id}/swap`,
+      'PUT',
+      { exercise: { source: 'custom', id: exercise.id } },
+    );
+    expect(res.status).toBe(200);
+    const updated = ((await res.json()) as { plan: FullPlan }).plan;
+    const swapped = trainingSession(updated)
+      .blocks?.flatMap((b) => b.slots)
+      .find((s) => s.id === slot.id);
+    expect(swapped?.exerciseSlug.startsWith('custom-')).toBe(true);
+    expect(swapped?.name).toBe('Banded glute bridge');
+  });
+
+  it('swaps to cue-less catalog and custom exercises (cue omitted)', async () => {
+    const plan = await makePlan(client);
+    const slot = aSlot(plan);
+    const base = `/v1/plans/${plan.id}/days/${plan.days[0]!.id}/slots/${slot.id}/swap`;
+    // A catalog movement with no cue.
+    expect(
+      (await client.json(base, 'PUT', { exercise: { source: 'catalog', slug: 'conventional-deadlift' } }))
+        .status,
+    ).toBe(200);
+    // A custom exercise created without a cue.
+    const { exercise } = (await (
+      await client.json('/v1/exercises/custom', 'POST', {
+        name: 'No-cue move',
+        primaryMuscles: ['glutes'],
+        equipment: ['bodyweight'],
+        role: 'accessory',
+        unilateral: false,
+      })
+    ).json()) as CustomExerciseResponse;
+    expect(
+      (await client.json(base, 'PUT', { exercise: { source: 'custom', id: exercise.id } })).status,
+    ).toBe(200);
+  });
+
+  it('404s swapping with an unknown catalog slug or custom id', async () => {
+    const plan = await makePlan(client);
+    const slot = aSlot(plan);
+    const base = `/v1/plans/${plan.id}/days/${plan.days[0]!.id}/slots/${slot.id}/swap`;
+    const noCatalog = await client.json(base, 'PUT', {
+      exercise: { source: 'catalog', slug: 'no-such-exercise' },
+    });
+    expect(noCatalog.status).toBe(404);
+    const noCustom = await client.json(base, 'PUT', {
+      exercise: { source: 'custom', id: `cex_${'0'.repeat(26)}` },
+    });
+    expect(noCustom.status).toBe(404);
+  });
+
+  it('404s swapping a slot that does not exist', async () => {
+    const plan = await makePlan(client);
+    const res = await client.json(
+      `/v1/plans/${plan.id}/days/${plan.days[0]!.id}/slots/slt_${'0'.repeat(26)}/swap`,
+      'PUT',
+      { exercise: { source: 'catalog', slug: 'barbell-hip-thrust' } },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('adds an exercise to a training session', async () => {
+    const plan = await makePlan(client);
+    const before = allSlugs(plan).length;
+    const res = await client.json(`/v1/plans/${plan.id}/days/${plan.days[0]!.id}/slots`, 'POST', {
+      sessionId: trainingSession(plan).id,
+      exercise: { source: 'catalog', slug: 'barbell-hip-thrust' },
+    });
+    expect(res.status).toBe(201);
+    const updated = ((await res.json()) as { plan: FullPlan }).plan;
+    expect(allSlugs(updated)).toContain('barbell-hip-thrust');
+    expect(allSlugs(updated).length).toBe(before + 1);
+  });
+
+  it('404s adding to a non-training (external) or unknown session', async () => {
+    const plan = await makePlan(client);
+    const base = `/v1/plans/${plan.id}/days/${plan.days[0]!.id}/slots`;
+    const external = await client.json(base, 'POST', {
+      sessionId: externalSession(plan).id,
+      exercise: { source: 'catalog', slug: 'barbell-hip-thrust' },
+    });
+    expect(external.status).toBe(404);
+    const unknown = await client.json(base, 'POST', {
+      sessionId: `pss_${'0'.repeat(26)}`,
+      exercise: { source: 'catalog', slug: 'barbell-hip-thrust' },
+    });
+    expect(unknown.status).toBe(404);
+  });
+
+  it('removes a slot, and 404s removing one that is gone', async () => {
+    const plan = await makePlan(client);
+    const slot = aSlot(plan);
+    const path = `/v1/plans/${plan.id}/days/${plan.days[0]!.id}/slots/${slot.id}`;
+    const res = await client.json(path, 'DELETE', {});
+    expect(res.status).toBe(200);
+    const updated = ((await res.json()) as { plan: FullPlan }).plan;
+    expect(allSlugs(updated)).not.toContain(slot.exerciseSlug);
+    // Removing it again now 404s.
+    expect((await client.json(path, 'DELETE', {})).status).toBe(404);
+  });
+
+  it('404s slot edits on a plan the caller does not own', async () => {
+    const plan = await makePlan(client);
+    const slot = aSlot(plan);
+    const other = await registerClient(app, 'mallory@example.com');
+    const res = await other.json(
+      `/v1/plans/${plan.id}/days/${plan.days[0]!.id}/slots/${slot.id}`,
+      'DELETE',
+      {},
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('404s slot edits on an unknown day', async () => {
+    const plan = await makePlan(client);
+    const res = await client.json(
+      `/v1/plans/${plan.id}/days/day_${'0'.repeat(26)}/slots`,
+      'POST',
+      {
+        sessionId: trainingSession(plan).id,
+        exercise: { source: 'catalog', slug: 'barbell-hip-thrust' },
+      },
+    );
+    expect(res.status).toBe(404);
+  });
+});

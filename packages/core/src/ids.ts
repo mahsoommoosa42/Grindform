@@ -58,6 +58,13 @@ export type SlotId = Brand<string, 'SlotId'>;
 export type LogId = Brand<string, 'LogId'>;
 
 /**
+ * Identifier for a user-authored custom exercise. Prefix: `cex_`. Unlike
+ * catalog movements (keyed by an authored {@link ExerciseSlug}), custom
+ * exercises are per-account DB rows, so they get a ULID like other entities.
+ */
+export type CustomExerciseId = Brand<string, 'CustomExerciseId'>;
+
+/**
  * Prefix table — single source of truth. Adding an entity means adding
  * an entry here, a branded type above, and a `newXxxId` factory below.
  */
@@ -70,6 +77,7 @@ const PREFIX = {
   planSession: 'pss',
   slot: 'slt',
   log: 'log',
+  customExercise: 'cex',
 } as const;
 
 /** Build a regex matching a fully-formed ID with the given prefix. */
@@ -107,6 +115,10 @@ export const newSlotId = (): SlotId => make<SlotId>(PREFIX.slot);
 /** Mint a fresh, time-sortable {@link LogId}. */
 export const newLogId = (): LogId => make<LogId>(PREFIX.log);
 
+/** Mint a fresh, time-sortable {@link CustomExerciseId}. */
+export const newCustomExerciseId = (): CustomExerciseId =>
+  make<CustomExerciseId>(PREFIX.customExercise);
+
 /** Type guard: true iff `s` is a syntactically-valid {@link UserId}. */
 export const isUserId = (s: string): s is UserId => matcher(PREFIX.user).test(s);
 
@@ -141,6 +153,10 @@ export const isSlotId = (s: string): s is SlotId => matcher(PREFIX.slot).test(s)
 
 /** Type guard: true iff `s` is a syntactically-valid {@link LogId}. */
 export const isLogId = (s: string): s is LogId => matcher(PREFIX.log).test(s);
+
+/** Type guard: true iff `s` is a syntactically-valid {@link CustomExerciseId}. */
+export const isCustomExerciseId = (s: string): s is CustomExerciseId =>
+  matcher(PREFIX.customExercise).test(s);
 
 /**
  * Validate `s` and return it branded as a {@link PlanId}.
@@ -219,5 +235,15 @@ export const parseSlotId = (s: string): SlotId => {
  */
 export const parseLogId = (s: string): LogId => {
   if (!isLogId(s)) throw new Error(`invalid LogId: ${s}`);
+  return s;
+};
+
+/**
+ * Validate `s` and return it branded as a {@link CustomExerciseId}.
+ *
+ * @throws Error if `s` is not a syntactically-valid custom-exercise ID.
+ */
+export const parseCustomExerciseId = (s: string): CustomExerciseId => {
+  if (!isCustomExerciseId(s)) throw new Error(`invalid CustomExerciseId: ${s}`);
   return s;
 };

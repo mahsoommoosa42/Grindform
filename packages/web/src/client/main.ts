@@ -30,9 +30,13 @@ import { ApiError } from './api.ts';
 import type {
   AdminUserRow,
   AuditRow,
+  CatalogExercise,
+  CustomExercise,
   DayProgress,
   DaySpecInput,
   Equipment,
+  ExerciseRef,
+  ExerciseRole,
   ExerciseSlot,
   Experience,
   ExternalActivity,
@@ -91,6 +95,9 @@ const ICON_WEEK = svgBase(
 const ICON_CALC = svgBase(
   svg`<rect x="5" y="2" width="14" height="20" rx="2" /><path d="M8 6h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 19h4" />`,
 );
+const ICON_EXERCISES = svgBase(
+  svg`<path d="M3 12h2M19 12h2M7 8v8M17 8v8M7 12h10" /><rect x="5" y="9" width="2" height="6" rx="1" /><rect x="17" y="9" width="2" height="6" rx="1" />`,
+);
 
 const GOALS: readonly { id: Goal; label: string }[] = [
   { id: 'build_muscle', label: 'Build muscle' },
@@ -123,6 +130,13 @@ const MUSCLES: readonly MuscleGroup[] = [
   'triceps',
   'core',
   'full_body',
+];
+
+const EXERCISE_ROLES: readonly ExerciseRole[] = [
+  'main',
+  'accessory',
+  'conditioning',
+  'mobility',
 ];
 
 const WEEKDAYS: readonly { id: Weekday; label: string }[] = [
@@ -337,6 +351,45 @@ const buildSetRows = (
 const workingRows = (state: SlotUiState): EditableSet[] =>
   state.sets.filter((s) => s.kind === 'working');
 
+/**
+ * The exercise-picker overlay state, opened when the user swaps an exercise
+ * in a slot or adds an extra one to a training session. `slotId` is set when
+ * swapping; `sessionId` when adding.
+ */
+interface PickerState {
+  readonly mode: 'swap' | 'add';
+  readonly dayId: string;
+  readonly slotId?: string;
+  readonly sessionId?: string;
+}
+
+/** The "create a custom exercise" form's editable fields. */
+interface CustomForm {
+  name: string;
+  primaryMuscles: MuscleGroup[];
+  equipment: Equipment[];
+  role: ExerciseRole;
+  unilateral: boolean;
+  cue: string;
+}
+
+/** A fresh, empty custom-exercise form. */
+const emptyCustomForm = (): CustomForm => ({
+  name: '',
+  primaryMuscles: [],
+  equipment: ['bodyweight'],
+  role: 'accessory',
+  unilateral: false,
+  cue: '',
+});
+
+/** Compact "3 × 8–12" prescription label for a slot (with a /side marker). */
+const schemeLabel = (slot: ExerciseSlot): string => {
+  const r = slot.scheme;
+  const reps = r.repsLow === r.repsHigh ? `${r.repsLow}` : `${r.repsLow}–${r.repsHigh}`;
+  return `${r.sets} × ${reps}${r.perSide ? '/side' : ''}`;
+};
+
 /** The whole Grindform UI. */
 export class GfApp extends LitElement {
   static override properties = {
@@ -377,6 +430,17 @@ export class GfApp extends LitElement {
     calcWeight: { state: true },
     calcReps: { state: true },
     calcGoal: { state: true },
+    catalog: { state: true },
+    customExercises: { state: true },
+    exerciseSearch: { state: true },
+    exerciseMuscle: { state: true },
+    customForm: { state: true },
+    customBusy: { state: true },
+    customError: { state: true },
+    picker: { state: true },
+    pickerSearch: { state: true },
+    pickerBusy: { state: true },
+    pickerError: { state: true },
   };
 
   declare authStatus: 'loading' | 'auth' | 'ready';
@@ -393,7 +457,7 @@ export class GfApp extends LitElement {
   declare adminDetail: { user: PublicUser; audit: AuditRow[] } | null;
   declare adminError: string | null;
   declare theme: ThemeId;
-  declare view: 'generate' | 'week' | 'admin' | 'calculator';
+  declare view: 'generate' | 'week' | 'admin' | 'calculator' | 'exercises';
   declare goal: Goal;
   declare experience: Experience;
   declare equipment: Equipment[];
@@ -421,6 +485,23 @@ export class GfApp extends LitElement {
   declare calcWeight: number;
   declare calcReps: number;
   declare calcGoal: LoadGoal;
+  /** The built-in exercise catalog (shared global index), loaded lazily. */
+  declare catalog: CatalogExercise[];
+  /** The account's custom exercises (never part of the global index). */
+  declare customExercises: CustomExercise[];
+  /** Free-text filter for the Exercises view + the swap/add picker. */
+  declare exerciseSearch: string;
+  /** Muscle-group filter for the Exercises view (`'all'` = no filter). */
+  declare exerciseMuscle: MuscleGroup | 'all';
+  /** The custom-exercise creation form. */
+  declare customForm: CustomForm;
+  declare customBusy: boolean;
+  declare customError: string | null;
+  /** The open swap/add picker, or `null` when closed. */
+  declare picker: PickerState | null;
+  declare pickerSearch: string;
+  declare pickerBusy: boolean;
+  declare pickerError: string | null;
 
   constructor() {
     super();
@@ -466,6 +547,17 @@ export class GfApp extends LitElement {
     this.calcWeight = 60;
     this.calcReps = 8;
     this.calcGoal = 'hypertrophy';
+    this.catalog = [];
+    this.customExercises = [];
+    this.exerciseSearch = '';
+    this.exerciseMuscle = 'all';
+    this.customForm = emptyCustomForm();
+    this.customBusy = false;
+    this.customError = null;
+    this.picker = null;
+    this.pickerSearch = '';
+    this.pickerBusy = false;
+    this.pickerError = null;
   }
 
   override connectedCallback(): void {
@@ -491,6 +583,21 @@ export class GfApp extends LitElement {
     this.user = user;
     this.authStatus = 'ready';
     void this.syncSettings();
+    void this.loadExercises();
+  }
+
+  /** Load the catalog (once) + the account's custom exercises. */
+  private async loadExercises(): Promise<void> {
+    try {
+      const [{ exercises: catalog }, { exercises: custom }] = await Promise.all([
+        this.catalog.length === 0 ? api.listExercises() : Promise.resolve({ exercises: this.catalog }),
+        api.listCustomExercises(),
+      ]);
+      this.catalog = catalog;
+      this.customExercises = custom;
+    } catch {
+      /* Non-fatal: the picker/Exercises view will simply show what loaded. */
+    }
   }
 
   private async syncSettings(): Promise<void> {
@@ -553,6 +660,10 @@ export class GfApp extends LitElement {
     this.accountMenuOpen = false;
     this.adminUsers = null;
     this.adminDetail = null;
+    this.catalog = [];
+    this.customExercises = [];
+    this.picker = null;
+    this.customForm = emptyCustomForm();
     this.view = 'generate';
     this.authMode = 'login';
     this.authStatus = 'auth';
@@ -869,6 +980,142 @@ export class GfApp extends LitElement {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Plan editing: swap / add / remove an exercise (no regeneration).
+  // -------------------------------------------------------------------------
+
+  /** Open the exercise picker to swap the exercise in `slotId`. */
+  private openSwap(dayId: string, slotId: string): void {
+    this.picker = { mode: 'swap', dayId, slotId };
+    this.pickerSearch = '';
+    this.pickerError = null;
+  }
+
+  /** Open the exercise picker to add an extra exercise to a training session. */
+  private openAdd(dayId: string, sessionId: string): void {
+    this.picker = { mode: 'add', dayId, sessionId };
+    this.pickerSearch = '';
+    this.pickerError = null;
+  }
+
+  private closePicker(): void {
+    this.picker = null;
+    this.pickerBusy = false;
+    this.pickerError = null;
+  }
+
+  /** Apply a plan returned by an edit endpoint, refreshing derived state. */
+  private applyEditedPlan(plan: WeeklyPlan): void {
+    this.plan = plan;
+    const open = this.selectedDayId;
+    if (open !== null) {
+      const day = plan.days.find((d) => d.id === open);
+      if (day !== undefined) this.initSlotState(day);
+      void this.refreshProgress(open);
+    } else {
+      void this.refreshWeekVolume();
+    }
+  }
+
+  /** Resolve the picker's chosen exercise and call the matching edit endpoint. */
+  private async chooseExercise(ref: ExerciseRef): Promise<void> {
+    const picker = this.picker;
+    if (picker === null || this.plan === null) return;
+    this.pickerBusy = true;
+    this.pickerError = null;
+    try {
+      const { plan } =
+        picker.mode === 'swap'
+          ? await api.swapSlot(this.plan.id, picker.dayId, picker.slotId as string, ref)
+          : await api.addSlot(this.plan.id, picker.dayId, picker.sessionId as string, ref);
+      this.applyEditedPlan(plan);
+      this.closePicker();
+    } catch (err) {
+      this.pickerError = err instanceof ApiError ? err.message : 'Could not update the plan.';
+      this.pickerBusy = false;
+    }
+  }
+
+  /** Remove an exercise slot from a day (after a confirm). */
+  private async onRemoveSlot(dayId: string, slotId: string): Promise<void> {
+    if (this.plan === null) return;
+    try {
+      const { plan } = await api.removeSlot(this.plan.id, dayId, slotId);
+      this.applyEditedPlan(plan);
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not remove the exercise.';
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Custom exercises (per-account; excluded from the global index).
+  // -------------------------------------------------------------------------
+
+  private updateCustomForm(patch: Partial<CustomForm>): void {
+    this.customForm = { ...this.customForm, ...patch };
+  }
+
+  private toggleCustomMuscle(muscle: MuscleGroup): void {
+    const has = this.customForm.primaryMuscles.includes(muscle);
+    this.updateCustomForm({
+      primaryMuscles: has
+        ? this.customForm.primaryMuscles.filter((m) => m !== muscle)
+        : [...this.customForm.primaryMuscles, muscle],
+    });
+  }
+
+  private toggleCustomEquipment(item: Equipment): void {
+    const has = this.customForm.equipment.includes(item);
+    this.updateCustomForm({
+      equipment: has
+        ? this.customForm.equipment.filter((e) => e !== item)
+        : [...this.customForm.equipment, item],
+    });
+  }
+
+  private async onCreateCustom(): Promise<void> {
+    const form = this.customForm;
+    if (form.name.trim().length < 2) {
+      this.customError = 'Give the exercise a name (at least 2 characters).';
+      return;
+    }
+    if (form.primaryMuscles.length === 0) {
+      this.customError = 'Pick at least one primary muscle.';
+      return;
+    }
+    if (form.equipment.length === 0) {
+      this.customError = 'Pick at least one piece of equipment.';
+      return;
+    }
+    this.customBusy = true;
+    this.customError = null;
+    try {
+      const { exercise } = await api.createCustomExercise({
+        name: form.name.trim(),
+        primaryMuscles: form.primaryMuscles,
+        equipment: form.equipment,
+        role: form.role,
+        unilateral: form.unilateral,
+        ...(form.cue.trim() === '' ? {} : { cue: form.cue.trim() }),
+      });
+      this.customExercises = [...this.customExercises, exercise];
+      this.customForm = emptyCustomForm();
+    } catch (err) {
+      this.customError = err instanceof ApiError ? err.message : 'Could not save the exercise.';
+    } finally {
+      this.customBusy = false;
+    }
+  }
+
+  private async onDeleteCustom(id: string): Promise<void> {
+    try {
+      await api.deleteCustomExercise(id);
+      this.customExercises = this.customExercises.filter((e) => e.id !== id);
+    } catch (err) {
+      this.customError = err instanceof ApiError ? err.message : 'Could not delete the exercise.';
+    }
+  }
+
   /** Recompute a slot's set rows after its recent set / options change. */
   private rebuildSlot(slot: ExerciseSlot, mutate: (s: SlotUiState) => void): void {
     const current = this.slotState[slot.id];
@@ -982,6 +1229,7 @@ export class GfApp extends LitElement {
         ${this.renderMain()}
       </main>
       ${this.selectedDayId !== null ? this.renderTracker() : nothing}
+      ${this.picker !== null ? this.renderPicker() : nothing}
       ${this.showPrivacy ? this.renderPrivacy() : nothing}
     `;
   }
@@ -990,6 +1238,7 @@ export class GfApp extends LitElement {
     if (this.view === 'admin') return this.renderAdmin();
     if (this.view === 'week') return this.renderWeek();
     if (this.view === 'calculator') return this.renderCalculator();
+    if (this.view === 'exercises') return this.renderExercises();
     return this.renderGenerator();
   }
 
@@ -1234,7 +1483,7 @@ export class GfApp extends LitElement {
   }
 
   /**
-   * The three primary views. Rendered inline in the header on wide screens and
+   * The primary views. Rendered inline in the header on wide screens and
    * repositioned by CSS into a fixed bottom tab bar on phones.
    */
   private renderNav(): TemplateResult {
@@ -1260,6 +1509,16 @@ export class GfApp extends LitElement {
         >
           <span class="tab-icon" aria-hidden="true">${ICON_WEEK}</span>
           <span class="tab-label">My week</span>
+        </button>
+        <button
+          class=${this.view === 'exercises' ? 'tab active' : 'tab'}
+          data-testid="nav-exercises"
+          @click=${() => {
+            this.view = 'exercises';
+          }}
+        >
+          <span class="tab-icon" aria-hidden="true">${ICON_EXERCISES}</span>
+          <span class="tab-label">Exercises</span>
         </button>
         <button
           class=${this.view === 'calculator' ? 'tab active' : 'tab'}
@@ -1821,7 +2080,7 @@ export class GfApp extends LitElement {
               <div class="session-cards" data-testid=${`sessions-${day.weekday}`}>
                 ${day.sessions.map((s) =>
                   s.kind === 'training'
-                    ? this.renderTrainingSessionCard(s)
+                    ? this.renderTrainingSessionCard(day.id, s)
                     : this.renderExternalSessionCard(s),
                 )}
               </div>
@@ -1842,17 +2101,75 @@ export class GfApp extends LitElement {
     `;
   }
 
-  /** A single training session shown on a day card: focus + timed blocks. */
-  private renderTrainingSessionCard(s: TrainingSession): TemplateResult {
+  /**
+   * A single training session on a day card: focus, then each block with its
+   * exercises listed inline (name + sets×reps), each editable via swap/remove,
+   * plus an "Add exercise" action for the session.
+   */
+  private renderTrainingSessionCard(dayId: string, s: TrainingSession): TemplateResult {
     return html`
       <div class="session-card training" data-testid=${`session-card-${s.id}`}>
         <p class="focus">${s.focus.map((m) => titleCase(m)).join(' · ')}</p>
         <ul class="blocks">
-          ${s.blocks.map(
-            (b) => html`<li><span class="btag ${b.type}">${b.title}</span> ${b.estMinutes}m</li>`,
-          )}
+          ${s.blocks.map((b) => this.renderBlock(dayId, b))}
         </ul>
+        <button
+          class="add-ex"
+          data-testid=${`add-exercise-${s.id}`}
+          @click=${() => this.openAdd(dayId, s.id)}
+        >
+          + Add exercise
+        </button>
       </div>
+    `;
+  }
+
+  /** One block of a session: its title/minutes, then any exercise slots. */
+  private renderBlock(dayId: string, b: SessionBlock): TemplateResult {
+    return html`
+      <li class="block">
+        <div class="block-head">
+          <span class="btag ${b.type}">${b.title}</span> <span class="block-min">${b.estMinutes}m</span>
+        </div>
+        ${b.slots.length > 0
+          ? html`<ul class="slots">${b.slots.map((slot) => this.renderSlotRow(dayId, slot))}</ul>`
+          : nothing}
+      </li>
+    `;
+  }
+
+  /** One exercise inside a block: name + sets×reps, with swap/remove actions. */
+  private renderSlotRow(dayId: string, slot: ExerciseSlot): TemplateResult {
+    const custom = slot.exerciseSlug.startsWith('custom-');
+    return html`
+      <li class="slot-row" data-testid=${`week-slot-${slot.id}`}>
+        <div class="slot-info">
+          <span class="slot-name">${slot.name}</span>
+          ${custom ? html`<span class="custom-tag" title="Your custom exercise">custom</span>` : nothing}
+          ${slot.superset !== undefined
+            ? html`<span class="ss-tag">SS ${slot.superset.group}${slot.superset.order}</span>`
+            : nothing}
+          <span class="slot-scheme">${schemeLabel(slot)}</span>
+        </div>
+        <div class="slot-actions">
+          <button
+            class="mini"
+            data-testid=${`swap-${slot.id}`}
+            title="Swap this exercise"
+            @click=${() => this.openSwap(dayId, slot.id)}
+          >
+            ↻
+          </button>
+          <button
+            class="mini danger"
+            data-testid=${`remove-${slot.id}`}
+            title="Remove this exercise"
+            @click=${() => void this.onRemoveSlot(dayId, slot.id)}
+          >
+            ✕
+          </button>
+        </div>
+      </li>
     `;
   }
 
@@ -1869,6 +2186,271 @@ export class GfApp extends LitElement {
           ${s.plannedMinutes}m planned${log.done ? html` · done ✓` : nothing}
         </p>
       </div>
+    `;
+  }
+
+  // -------------------------------------------------------------------------
+  // Exercises view: the common-workout index + custom exercises.
+  // -------------------------------------------------------------------------
+
+  /** Catalog entries matching the Exercises view's search + muscle filter. */
+  private get filteredCatalog(): CatalogExercise[] {
+    const q = this.exerciseSearch.trim().toLowerCase();
+    return this.catalog.filter((e) => {
+      const muscleOk = this.exerciseMuscle === 'all' || e.primaryMuscles.includes(this.exerciseMuscle);
+      const textOk = q === '' || e.name.toLowerCase().includes(q);
+      return muscleOk && textOk;
+    });
+  }
+
+  private renderExercises(): TemplateResult {
+    const list = this.filteredCatalog;
+    return html`
+      <section class="panel" data-testid="exercises">
+        <h1>Exercises</h1>
+        <p class="lede">
+          Browse the ${this.catalog.length}-move common-workout index, or add your own. Custom
+          exercises are private to your account and never join the shared index.
+        </p>
+        <div class="ex-filters">
+          <input
+            type="search"
+            placeholder="Search exercises…"
+            data-testid="exercise-search"
+            .value=${this.exerciseSearch}
+            @input=${(e: Event) => {
+              this.exerciseSearch = (e.target as HTMLInputElement).value;
+            }}
+          />
+          <select
+            data-testid="exercise-muscle"
+            @change=${(e: Event) => {
+              this.exerciseMuscle = (e.target as HTMLSelectElement).value as MuscleGroup | 'all';
+            }}
+          >
+            <option value="all">All muscles</option>
+            ${MUSCLES.map(
+              (m) =>
+                html`<option value=${m} ?selected=${this.exerciseMuscle === m}>
+                  ${titleCase(m)}
+                </option>`,
+            )}
+          </select>
+        </div>
+
+        ${this.customExercises.length > 0
+          ? html`
+              <h2 class="ex-subhead">Your custom exercises</h2>
+              <ul class="ex-list" data-testid="custom-list">
+                ${this.customExercises.map((e) => this.renderCustomRow(e))}
+              </ul>
+            `
+          : nothing}
+
+        <h2 class="ex-subhead">Common index (${list.length})</h2>
+        <ul class="ex-list" data-testid="catalog-list">
+          ${list.length === 0
+            ? html`<li class="ex-empty">No exercises match your filter.</li>`
+            : list.map((e) => this.renderCatalogRow(e))}
+        </ul>
+
+        ${this.renderCustomForm()}
+      </section>
+    `;
+  }
+
+  private renderCatalogRow(e: CatalogExercise): TemplateResult {
+    return html`
+      <li class="ex-row" data-testid=${`catalog-${e.slug}`}>
+        <div class="ex-main">
+          <span class="ex-name">${e.name}</span>
+          <span class="ex-meta">
+            ${e.primaryMuscles.map((m) => titleCase(m)).join(', ')} · ${titleCase(e.role)}
+          </span>
+        </div>
+        <span class="ex-equip">${e.equipment.map((q) => titleCase(q)).join(', ')}</span>
+      </li>
+    `;
+  }
+
+  private renderCustomRow(e: CustomExercise): TemplateResult {
+    return html`
+      <li class="ex-row custom" data-testid=${`custom-${e.id}`}>
+        <div class="ex-main">
+          <span class="ex-name">${e.name} <span class="custom-tag">custom</span></span>
+          <span class="ex-meta">
+            ${e.primaryMuscles.map((m) => titleCase(m)).join(', ')} · ${titleCase(e.role)}
+          </span>
+        </div>
+        <button
+          class="mini danger"
+          data-testid=${`delete-custom-${e.id}`}
+          title="Delete this custom exercise"
+          @click=${() => void this.onDeleteCustom(e.id)}
+        >
+          ✕
+        </button>
+      </li>
+    `;
+  }
+
+  /** The form for creating a new custom exercise. */
+  private renderCustomForm(): TemplateResult {
+    const f = this.customForm;
+    return html`
+      <div class="custom-form" data-testid="custom-form">
+        <h2 class="ex-subhead">Add a custom exercise</h2>
+        ${this.customError !== null
+          ? html`<div class="banner error" role="alert" data-testid="custom-error">
+              ${this.customError}
+            </div>`
+          : nothing}
+        <label class="field">
+          <span>Name</span>
+          <input
+            type="text"
+            data-testid="custom-name"
+            maxlength="80"
+            .value=${f.name}
+            @input=${(e: Event) => this.updateCustomForm({ name: (e.target as HTMLInputElement).value })}
+          />
+        </label>
+        <fieldset class="chips">
+          <legend>Primary muscles</legend>
+          ${MUSCLES.map(
+            (m) => html`<button
+              type="button"
+              class=${f.primaryMuscles.includes(m) ? 'chip on' : 'chip'}
+              data-testid=${`custom-muscle-${m}`}
+              @click=${() => this.toggleCustomMuscle(m)}
+            >
+              ${titleCase(m)}
+            </button>`,
+          )}
+        </fieldset>
+        <fieldset class="chips">
+          <legend>Equipment</legend>
+          ${EQUIPMENT.map(
+            (item) => html`<button
+              type="button"
+              class=${f.equipment.includes(item) ? 'chip on' : 'chip'}
+              data-testid=${`custom-equip-${item}`}
+              @click=${() => this.toggleCustomEquipment(item)}
+            >
+              ${titleCase(item)}
+            </button>`,
+          )}
+        </fieldset>
+        <label class="field">
+          <span>Role</span>
+          <select
+            data-testid="custom-role"
+            @change=${(e: Event) =>
+              this.updateCustomForm({ role: (e.target as HTMLSelectElement).value as ExerciseRole })}
+          >
+            ${EXERCISE_ROLES.map(
+              (r) => html`<option value=${r} ?selected=${f.role === r}>${titleCase(r)}</option>`,
+            )}
+          </select>
+        </label>
+        <label class="check">
+          <input
+            type="checkbox"
+            data-testid="custom-unilateral"
+            .checked=${f.unilateral}
+            @change=${(e: Event) =>
+              this.updateCustomForm({ unilateral: (e.target as HTMLInputElement).checked })}
+          />
+          <span>Unilateral (one side at a time)</span>
+        </label>
+        <label class="field">
+          <span>Cue (optional)</span>
+          <input
+            type="text"
+            data-testid="custom-cue"
+            maxlength="200"
+            .value=${f.cue}
+            @input=${(e: Event) => this.updateCustomForm({ cue: (e.target as HTMLInputElement).value })}
+          />
+        </label>
+        <button
+          class="primary"
+          data-testid="custom-save"
+          ?disabled=${this.customBusy}
+          @click=${() => void this.onCreateCustom()}
+        >
+          ${this.customBusy ? 'Saving…' : 'Save exercise'}
+        </button>
+      </div>
+    `;
+  }
+
+  // -------------------------------------------------------------------------
+  // The swap/add exercise picker overlay.
+  // -------------------------------------------------------------------------
+
+  private renderPicker(): TemplateResult {
+    const picker = this.picker;
+    if (picker === null) return html`${nothing}`;
+    const q = this.pickerSearch.trim().toLowerCase();
+    const match = (name: string): boolean => q === '' || name.toLowerCase().includes(q);
+    const customHits = this.customExercises.filter((e) => match(e.name));
+    const catalogHits = this.catalog.filter((e) => match(e.name));
+    return html`
+      <div class="overlay" data-testid="picker" @click=${() => this.closePicker()}>
+        <div class="sheet" @click=${(e: Event) => e.stopPropagation()}>
+          <header class="sheet-head">
+            <h2>${picker.mode === 'swap' ? 'Swap exercise' : 'Add exercise'}</h2>
+            <button class="icon" data-testid="picker-close" @click=${() => this.closePicker()}>
+              ✕
+            </button>
+          </header>
+          ${this.pickerError !== null
+            ? html`<div class="banner error" role="alert" data-testid="picker-error">
+                ${this.pickerError}
+              </div>`
+            : nothing}
+          <input
+            type="search"
+            class="picker-search"
+            placeholder="Search exercises…"
+            data-testid="picker-search"
+            .value=${this.pickerSearch}
+            @input=${(e: Event) => {
+              this.pickerSearch = (e.target as HTMLInputElement).value;
+            }}
+          />
+          <div class="picker-list">
+            ${customHits.length > 0
+              ? html`<p class="picker-group">Your exercises</p>
+                  ${customHits.map((e) =>
+                    this.renderPickerOption(e.name, true, { source: 'custom', id: e.id }),
+                  )}`
+              : nothing}
+            <p class="picker-group">Common index</p>
+            ${catalogHits.length === 0
+              ? html`<p class="ex-empty">No matches.</p>`
+              : catalogHits.map((e) =>
+                  this.renderPickerOption(e.name, false, { source: 'catalog', slug: e.slug }),
+                )}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private renderPickerOption(name: string, custom: boolean, ref: ExerciseRef): TemplateResult {
+    const key = ref.source === 'custom' ? ref.id : ref.slug;
+    return html`
+      <button
+        class="picker-option"
+        data-testid=${`pick-${key}`}
+        ?disabled=${this.pickerBusy}
+        @click=${() => void this.chooseExercise(ref)}
+      >
+        <span>${name}</span>
+        ${custom ? html`<span class="custom-tag">custom</span>` : nothing}
+      </button>
     `;
   }
 
@@ -2677,6 +3259,237 @@ export class GfApp extends LitElement {
       background: var(--gf-surface);
       border: 1px solid var(--gf-border);
       font-weight: 600;
+    }
+    /* Inline exercises on a day card */
+    .block {
+      display: grid;
+      gap: 3px;
+    }
+    .block-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .block-min {
+      color: var(--gf-muted);
+      font-size: 0.78rem;
+    }
+    .slots {
+      list-style: none;
+      margin: 0 0 2px;
+      padding: 0 0 0 2px;
+      display: grid;
+      gap: 3px;
+    }
+    .slot-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+      padding: 4px 6px;
+      border-radius: var(--gf-radius-sm);
+      background: var(--gf-surface);
+      border: 1px solid var(--gf-border);
+    }
+    .slot-info {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 4px 6px;
+      min-width: 0;
+    }
+    .slot-name {
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+    .slot-scheme {
+      color: var(--gf-muted);
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+    .custom-tag {
+      font-size: 0.62rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 1px 5px;
+      border-radius: 999px;
+      color: var(--gf-accent);
+      background: var(--gf-accent-soft, var(--gf-hover));
+      border: 1px solid var(--gf-accent);
+    }
+    .ss-tag {
+      font-size: 0.66rem;
+      font-weight: 700;
+      color: var(--gf-muted);
+    }
+    .slot-actions {
+      display: flex;
+      gap: 4px;
+      flex: none;
+    }
+    .mini {
+      appearance: none;
+      font: inherit;
+      cursor: pointer;
+      width: 30px;
+      height: 30px;
+      min-width: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--gf-radius-sm);
+      background: var(--gf-bg);
+      color: var(--gf-text);
+      border: 1px solid var(--gf-border);
+      line-height: 1;
+    }
+    .mini:hover {
+      background: var(--gf-hover);
+    }
+    .mini.danger {
+      color: var(--gf-danger, #c0322b);
+    }
+    .add-ex {
+      appearance: none;
+      font: inherit;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      align-self: start;
+      margin-top: 2px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--gf-accent);
+      border: 1px dashed var(--gf-accent);
+    }
+    .add-ex:hover {
+      background: var(--gf-hover);
+    }
+    /* Exercises view */
+    .ex-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 8px 0 12px;
+    }
+    .ex-filters input,
+    .ex-filters select {
+      flex: 1 1 140px;
+      min-width: 0;
+    }
+    .ex-subhead {
+      font-size: 0.95rem;
+      margin: 16px 0 6px;
+    }
+    .ex-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 6px;
+    }
+    .ex-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-width: 0;
+      padding: 8px 10px;
+      border-radius: var(--gf-radius-sm);
+      background: var(--gf-surface);
+      border: 1px solid var(--gf-border);
+    }
+    .ex-main {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+    .ex-name {
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+    .ex-meta {
+      color: var(--gf-muted);
+      font-size: 0.78rem;
+    }
+    .ex-equip {
+      color: var(--gf-muted);
+      font-size: 0.74rem;
+      text-align: right;
+      flex: none;
+      max-width: 40%;
+    }
+    .ex-empty {
+      color: var(--gf-muted);
+      font-size: 0.85rem;
+    }
+    .custom-form {
+      margin-top: 20px;
+      padding: 14px;
+      border-radius: var(--gf-radius);
+      background: var(--gf-surface);
+      border: 1px solid var(--gf-border);
+      display: grid;
+      gap: 10px;
+    }
+    .custom-form .field {
+      display: grid;
+      gap: 4px;
+    }
+    .custom-form .field > span {
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+    .custom-form .check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+    }
+    /* Picker overlay list */
+    .picker-search {
+      width: 100%;
+      box-sizing: border-box;
+      margin-bottom: 10px;
+    }
+    .picker-list {
+      display: grid;
+      gap: 4px;
+      max-height: 55vh;
+      overflow-y: auto;
+    }
+    .picker-group {
+      margin: 8px 0 2px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--gf-muted);
+    }
+    .picker-option {
+      appearance: none;
+      font: inherit;
+      cursor: pointer;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 44px;
+      padding: 8px 12px;
+      border-radius: var(--gf-radius-sm);
+      background: var(--gf-bg);
+      color: var(--gf-text);
+      border: 1px solid var(--gf-border);
+    }
+    .picker-option:hover {
+      background: var(--gf-hover);
+    }
+    .picker-option[disabled] {
+      opacity: 0.5;
+      cursor: default;
     }
     .bar {
       height: 8px;
