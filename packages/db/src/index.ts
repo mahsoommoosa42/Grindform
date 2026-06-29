@@ -15,6 +15,7 @@ export {
   setLogs,
   settings,
   users,
+  verificationTokens,
 } from './schema/tables.ts';
 export type { Db, DbOrTx, DbTx } from './client.ts';
 export { applyMigrations, splitStatements } from './migrate.ts';
@@ -51,6 +52,7 @@ export {
   findUserById,
   lastActivityFor,
   listUsersWithStats,
+  setEmailVerified,
   setUserRole,
   setUserStatus,
   touchLastLogin,
@@ -67,3 +69,12 @@ export {
 export type { NewSession, Session } from './repos/sessions-repo.ts';
 export { listAuditForUser, recordAudit } from './repos/audit-repo.ts';
 export type { AuditEntry, NewAuditEntry } from './repos/audit-repo.ts';
+export {
+  consumeVerificationToken,
+  countActiveTokensForUser,
+  createVerificationToken,
+  deleteExpiredVerificationTokens,
+  deleteVerificationTokensForUser,
+  findVerificationTokenByHash,
+} from './repos/verification-tokens-repo.ts';
+export type { NewVerificationToken, VerificationToken } from './repos/verification-tokens-repo.ts';

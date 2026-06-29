@@ -11,6 +11,7 @@ import {
   isSessionId,
   isSlotId,
   isUserId,
+  isVerificationTokenId,
   newAuditId,
   newCustomExerciseId,
   newDayId,
@@ -20,6 +21,7 @@ import {
   newSessionId,
   newSlotId,
   newUserId,
+  newVerificationTokenId,
   parseAuditId,
   parseCustomExerciseId,
   parseDayId,
@@ -42,6 +44,7 @@ describe('id factories produce prefixed, well-formed, sortable IDs', () => {
     { make: newSlotId, prefix: 'slt', guard: isSlotId },
     { make: newLogId, prefix: 'log', guard: isLogId },
     { make: newCustomExerciseId, prefix: 'cex', guard: isCustomExerciseId },
+    { make: newVerificationTokenId, prefix: 'vtk', guard: isVerificationTokenId },
   ] as const;
 
   for (const { make, prefix, guard } of cases) {

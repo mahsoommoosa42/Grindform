@@ -207,3 +207,11 @@ export const adminEnableUser = (id: string): Promise<{ user: PublicUser }> =>
 /** Admin: permanently erase an account. */
 export const adminDeleteUser = (id: string): Promise<void> =>
   request(`/v1/admin/users/${id}`, { method: 'DELETE' });
+
+/** Verify an email using the raw token from the verification link. */
+export const verifyEmail = (token: string): Promise<{ ok: boolean; user: PublicUser | null }> =>
+  request('/v1/auth/verify', { method: 'POST', body: JSON.stringify({ token }) });
+
+/** Resend the verification email for the current session's user. */
+export const resendVerification = (): Promise<{ ok: boolean }> =>
+  request('/v1/auth/resend-verification', { method: 'POST', body: '{}' });

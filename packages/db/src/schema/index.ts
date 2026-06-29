@@ -14,4 +14,5 @@ export {
   setLogs,
   settings,
   users,
+  verificationTokens,
 } from './tables.ts';

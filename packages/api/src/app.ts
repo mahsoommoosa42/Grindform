@@ -66,6 +66,7 @@ import {
 
 import { registerAdminRoutes } from './admin-routes.ts';
 import { registerAuthRoutes } from './auth-routes.ts';
+import type { EmailSender } from './email.ts';
 import { requireAuth } from './context.ts';
 import type { AppEnv } from './context.ts';
 import {
@@ -100,6 +101,10 @@ export interface ApiDeps {
    * client IP from `X-Forwarded-For` for the auth throttle. Defaults to 1.
    */
   readonly trustedProxyHops?: number;
+  /** Pluggable email sender. Defaults to the console sender. */
+  readonly emailSender?: EmailSender;
+  /** Base URL for verification links. */
+  readonly baseUrl?: string;
 }
 
 /** A `pln_…` path parameter schema. */
@@ -272,6 +277,8 @@ export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
     now,
     ...(deps.authRateLimit === undefined ? {} : { authRateLimit: deps.authRateLimit }),
     ...(deps.trustedProxyHops === undefined ? {} : { trustedProxyHops: deps.trustedProxyHops }),
+    ...(deps.emailSender === undefined ? {} : { emailSender: deps.emailSender }),
+    ...(deps.baseUrl === undefined ? {} : { baseUrl: deps.baseUrl }),
   });
   registerAdminRoutes(app, { db, now });
 

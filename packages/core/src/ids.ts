@@ -57,6 +57,9 @@ export type SlotId = Brand<string, 'SlotId'>;
 /** Identifier for a tracker log entry (a logged/completed set group). Prefix: `log_`. */
 export type LogId = Brand<string, 'LogId'>;
 
+/** Identifier for an email-verification token. Prefix: `vtk_`. */
+export type VerificationTokenId = Brand<string, 'VerificationTokenId'>;
+
 /**
  * Identifier for a user-authored custom exercise. Prefix: `cex_`. Unlike
  * catalog movements (keyed by an authored {@link ExerciseSlug}), custom
@@ -78,6 +81,7 @@ const PREFIX = {
   slot: 'slt',
   log: 'log',
   customExercise: 'cex',
+  verificationToken: 'vtk',
 } as const;
 
 /** Build a regex matching a fully-formed ID with the given prefix. */
@@ -119,6 +123,10 @@ export const newLogId = (): LogId => make<LogId>(PREFIX.log);
 export const newCustomExerciseId = (): CustomExerciseId =>
   make<CustomExerciseId>(PREFIX.customExercise);
 
+/** Mint a fresh, time-sortable {@link VerificationTokenId}. */
+export const newVerificationTokenId = (): VerificationTokenId =>
+  make<VerificationTokenId>(PREFIX.verificationToken);
+
 /** Type guard: true iff `s` is a syntactically-valid {@link UserId}. */
 export const isUserId = (s: string): s is UserId => matcher(PREFIX.user).test(s);
 
@@ -157,6 +165,10 @@ export const isLogId = (s: string): s is LogId => matcher(PREFIX.log).test(s);
 /** Type guard: true iff `s` is a syntactically-valid {@link CustomExerciseId}. */
 export const isCustomExerciseId = (s: string): s is CustomExerciseId =>
   matcher(PREFIX.customExercise).test(s);
+
+/** Type guard: true iff `s` is a syntactically-valid {@link VerificationTokenId}. */
+export const isVerificationTokenId = (s: string): s is VerificationTokenId =>
+  matcher(PREFIX.verificationToken).test(s);
 
 /**
  * Validate `s` and return it branded as a {@link PlanId}.

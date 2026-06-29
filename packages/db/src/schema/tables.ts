@@ -38,6 +38,7 @@ import type {
   ThemeId,
   TimeBudget,
   UserId,
+  VerificationTokenId,
   Weekday,
 } from '@grindform/core';
 import type { PlanSession } from '@grindform/planner';
@@ -53,6 +54,7 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+  emailVerified: boolean('email_verified').notNull().default(true),
 });
 
 /** A login session. Only the SHA-256 hash of the cookie token is stored. */
@@ -143,6 +145,18 @@ export const customExercises = pgTable('custom_exercises', {
   role: text('role').notNull().$type<ExerciseRole>(),
   unilateral: boolean('unilateral').notNull(),
   cue: text('cue'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** A hashed email-verification token linked to a user. */
+export const verificationTokens = pgTable('verification_tokens', {
+  id: text('id').primaryKey().$type<VerificationTokenId>(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' })
+    .$type<UserId>(),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

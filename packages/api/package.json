@@ -6,7 +6,8 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./test-hooks": "./src/test-hooks.ts"
   },
   "scripts": {
     "build": "echo 'source-only package; no build step'",
@@ -16,13 +17,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@grindform/core": "workspace:*",
     "@grindform/auth": "workspace:*",
     "@grindform/catalog": "workspace:*",
-    "@grindform/planner": "workspace:*",
+    "@grindform/core": "workspace:*",
     "@grindform/db": "workspace:*",
+    "@grindform/planner": "workspace:*",
     "@grindform/tracker": "workspace:*",
     "hono": "4.6.14",
+    "resend": "4.5.2",
     "zod": "3.25.63"
   },
   "devDependencies": {

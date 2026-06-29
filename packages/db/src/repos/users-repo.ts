@@ -38,6 +38,7 @@ export interface NewUser {
   readonly role: User['role'];
   readonly status: AccountStatus;
   readonly termsAcceptedAt: Date;
+  readonly emailVerified?: boolean;
 }
 
 /** A user row augmented with support-console statistics. */
@@ -64,6 +65,7 @@ export const createUser = async (db: DbOrTx, input: NewUser): Promise<User> => {
     createdAt: now,
     updatedAt: now,
     lastLoginAt: null,
+    emailVerified: input.emailVerified ?? true,
   };
   await db.insert(users).values(row);
   return row;
@@ -191,6 +193,14 @@ export const deleteUserAndData = async (db: DbOrTx, id: UserId): Promise<boolean
     const deleted = await tx.delete(users).where(eq(users.id, id)).returning({ id: users.id });
     return deleted.length > 0;
   });
+};
+
+/** Mark an account's email as verified. */
+export const setEmailVerified = async (db: DbOrTx, id: UserId): Promise<void> => {
+  await db
+    .update(users)
+    .set({ emailVerified: true, updatedAt: new Date() })
+    .where(eq(users.id, id));
 };
 
 /** The most recent logged-set timestamp across a user's plans, or null. */
