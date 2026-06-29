@@ -350,5 +350,6 @@ export const AuditActionSchema = z.enum([
   'admin.user.enable',
   'admin.user.delete',
   'admin.user.promote',
+  'admin.user.verify',
 ]);
 export type AuditAction = z.infer<typeof AuditActionSchema>;
