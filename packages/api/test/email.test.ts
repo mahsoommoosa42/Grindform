@@ -1,6 +1,16 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { consoleEmailSender, createConsoleEmailSender } from '../src/email.ts';
+import {
+  consoleEmailSender,
+  createConsoleEmailSender,
+  createResendEmailSender,
+} from '../src/email.ts';
+
+const sendMock = vi.fn();
+
+vi.mock('resend', () => ({
+  Resend: vi.fn().mockImplementation(() => ({ emails: { send: sendMock } })),
+}));
 
 describe('email sender', () => {
   it('consoleEmailSender logs the verification link', async () => {
@@ -19,5 +29,56 @@ describe('email sender', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual(['x@y.com', 'http://localhost/?verify=tok']);
     spy.mockRestore();
+  });
+});
+
+describe('resend email sender', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('instantiates Resend with the provided API key', async () => {
+    const { Resend } = await import('resend');
+    createResendEmailSender({ apiKey: 're_test_123' });
+    expect(Resend).toHaveBeenCalledWith('re_test_123');
+  });
+
+  it('sends a verification email via Resend with default from', async () => {
+    sendMock.mockResolvedValueOnce({ data: { id: 'email_1' }, error: null });
+    const sender = createResendEmailSender({ apiKey: 're_test_123' });
+    await sender.sendVerificationEmail('user@test.com', 'https://app.grindform.com/?verify=tok');
+
+    expect(sendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: 'Grindform <onboarding@resend.dev>',
+        to: 'user@test.com',
+        subject: 'Verify your Grindform email',
+        text: expect.stringContaining('https://app.grindform.com/?verify=tok'),
+      }),
+    );
+  });
+
+  it('uses a custom from address when provided', async () => {
+    sendMock.mockResolvedValueOnce({ data: { id: 'email_2' }, error: null });
+    const sender = createResendEmailSender({
+      apiKey: 're_test_456',
+      from: 'Grindform <noreply@grindform.com>',
+    });
+    await sender.sendVerificationEmail('user@test.com', 'https://x.com/?verify=abc');
+
+    expect(sendMock).toHaveBeenCalledWith(
+      expect.objectContaining({ from: 'Grindform <noreply@grindform.com>' }),
+    );
+  });
+
+  it('throws when the Resend API returns an error', async () => {
+    sendMock.mockResolvedValueOnce({
+      data: null,
+      error: { name: 'validation_error', message: 'Missing `to` field' },
+    });
+    const sender = createResendEmailSender({ apiKey: 're_test_789' });
+    await expect(
+      sender.sendVerificationEmail('bad@test.com', 'https://x.com/?verify=tok'),
+    ).rejects.toThrow('Resend API error: Missing `to` field');
   });
 });
