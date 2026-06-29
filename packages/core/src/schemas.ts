@@ -344,6 +344,8 @@ export const AuditActionSchema = z.enum([
   'account.logout',
   'account.export',
   'account.delete',
+  'account.verify_email',
+  'account.resend_verification',
   'admin.user.disable',
   'admin.user.enable',
   'admin.user.delete',

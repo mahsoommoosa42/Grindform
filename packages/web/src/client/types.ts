@@ -167,6 +167,7 @@ export interface PublicUser {
   readonly status: AccountStatus;
   readonly createdAt: string;
   readonly lastLoginAt: string | null;
+  readonly emailVerified: boolean;
 }
 
 /** A row in the admin user list (public user + a plan count). */

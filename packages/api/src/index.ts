@@ -12,3 +12,5 @@ export type { AppEnv, AuthState, PublicUser } from './context.ts';
 export { toPublicUser } from './context.ts';
 export { clientIpKey, createClientIpKey, createRateLimiter } from './rate-limit.ts';
 export type { RateLimiterOptions, RateLimitRequestLike } from './rate-limit.ts';
+export { consoleEmailSender, createConsoleEmailSender } from './email.ts';
+export type { EmailSender } from './email.ts';

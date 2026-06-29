@@ -13,6 +13,7 @@ import { serveStatic } from 'hono/bun';
 import { secureHeaders } from 'hono/secure-headers';
 
 import { createApp, seedAdminUser } from '@grindform/api';
+import type { EmailSender } from '@grindform/api';
 import { parseAdminEmails } from '@grindform/auth';
 
 import { createServerDb } from './db.ts';
@@ -101,6 +102,16 @@ app.use(
 app.use('/v1/*', bodyLimit({ maxSize: 128 * 1024 }));
 
 // JSON API.
+// When GRINDFORM_TEST_HOOKS is set, use the test email sender that captures
+// verification URLs so e2e tests can verify emails without parsing stdout.
+let emailSender: EmailSender | undefined;
+let getLastVerifyUrl: ((email: string) => string | undefined) | undefined;
+if (process.env.GRINDFORM_TEST_HOOKS === '1') {
+  const hooks = await import('@grindform/api/test-hooks');
+  emailSender = hooks.testEmailSender;
+  getLastVerifyUrl = hooks.getLastVerifyUrl;
+}
+
 app.route(
   '/',
   createApp({
@@ -109,8 +120,19 @@ app.route(
     secureCookies,
     trustedProxyHops,
     ...(authRateLimit === undefined ? {} : { authRateLimit }),
+    ...(emailSender === undefined ? {} : { emailSender }),
   }),
 );
+
+// Test-only endpoint: return the last verification URL for an email.
+if (getLastVerifyUrl !== undefined) {
+  const hook = getLastVerifyUrl;
+  app.get('/test/last-verify-url', (c) => {
+    const email = c.req.query('email') ?? '';
+    const url = hook(email);
+    return c.json({ url: url ?? null });
+  });
+}
 
 // Static assets (CSS, the bundled client, etc.).
 app.use('/styles.css', serveStatic({ path: './public/styles.css' }));

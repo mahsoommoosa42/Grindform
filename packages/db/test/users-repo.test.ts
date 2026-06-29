@@ -23,6 +23,7 @@ import {
   findUserById,
   lastActivityFor,
   listUsersWithStats,
+  setEmailVerified,
   setUserRole,
   setUserStatus,
   touchLastLogin,
@@ -156,5 +157,16 @@ describe('users-repo', () => {
     const user = await createUser(db, seed('empty@example.com'));
     expect(await deleteUserAndData(db, user.id)).toBe(true);
     expect(await deleteUserAndData(db, newUserId())).toBe(false);
+  });
+
+  it('marks an account email as verified', async () => {
+    const user = await createUser(db, {
+      ...seed('unverified@example.com'),
+      emailVerified: false,
+    });
+    expect(user.emailVerified).toBe(false);
+    await setEmailVerified(db, user.id);
+    const updated = await findUserById(db, user.id);
+    expect(updated?.emailVerified).toBe(true);
   });
 });

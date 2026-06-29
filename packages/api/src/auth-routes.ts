@@ -29,20 +29,28 @@ import {
   LoginInputSchema,
   newSessionId,
   newUserId,
+  newVerificationTokenId,
   RegisterInputSchema,
   UnauthorizedError,
+  ValidationError,
 } from '@grindform/core';
 import {
+  consumeVerificationToken,
+  countActiveTokensForUser,
   createSession,
   createUser,
+  createVerificationToken,
   deleteUserAndData,
+  deleteVerificationTokensForUser,
   findUserByEmail,
+  findUserById,
   getPlan,
   getSettings,
   listLogsForDay,
   listPlanIdsForUser,
   recordAudit,
   revokeSession,
+  setEmailVerified,
   touchLastLogin,
 } from '@grindform/db';
 import type { Db, User } from '@grindform/db';
@@ -50,8 +58,16 @@ import type { WeeklyPlan } from '@grindform/planner';
 
 import { requireAuth, resolveAuth, toPublicUser } from './context.ts';
 import type { AppEnv } from './context.ts';
+import type { EmailSender } from './email.ts';
+import { consoleEmailSender } from './email.ts';
 import { createClientIpKey, createRateLimiter } from './rate-limit.ts';
 import { parseOrThrow } from './validation.ts';
+
+/** How long a verification token stays valid (24 hours). */
+const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** Max active (unexpired) verification tokens per user before resend is refused. */
+const MAX_ACTIVE_TOKENS = 5;
 
 /** Config the auth routes need from the composition root. */
 export interface AuthRoutesDeps {
@@ -67,6 +83,10 @@ export interface AuthRoutesDeps {
    * (single-container-behind-one-proxy). See {@link createClientIpKey}.
    */
   readonly trustedProxyHops?: number;
+  /** Pluggable email sender. Defaults to the console sender. */
+  readonly emailSender?: EmailSender;
+  /** Base URL for verification links (e.g. `https://app.grindform.com`). */
+  readonly baseUrl?: string;
 }
 
 /**
@@ -114,6 +134,22 @@ export const registerAuthRoutes = (app: Hono<AppEnv>, deps: AuthRoutesDeps): voi
     key: createClientIpKey(deps.trustedProxyHops ?? 1),
   });
 
+  const emailSender = deps.emailSender ?? consoleEmailSender;
+  const baseUrl = deps.baseUrl ?? '';
+
+  /** Generate a verification token, persist its hash, and send the email. */
+  const sendVerification = async (user: User, now: Date): Promise<void> => {
+    const rawToken = generateSessionToken();
+    await createVerificationToken(db, {
+      id: newVerificationTokenId(),
+      userId: user.id,
+      tokenHash: hashToken(rawToken),
+      expiresAt: new Date(now.getTime() + VERIFICATION_TOKEN_TTL_MS),
+    });
+    const verifyUrl = `${baseUrl}/?verify=${encodeURIComponent(rawToken)}`;
+    await emailSender.sendVerificationEmail(user.email, verifyUrl);
+  };
+
   app.post('/v1/auth/register', throttle, async (c) => {
     const body = parseOrThrow(RegisterInputSchema, await c.req.json(), 'registration');
     if ((await findUserByEmail(db, body.email)) !== undefined) {
@@ -127,8 +163,10 @@ export const registerAuthRoutes = (app: Hono<AppEnv>, deps: AuthRoutesDeps): voi
       role: roleForEmail(body.email, deps.adminEmails),
       status: 'active',
       termsAcceptedAt: now,
+      emailVerified: false,
     });
     await issueSession(deps, c, user, now);
+    await sendVerification(user, now);
     await recordAudit(db, {
       action: 'account.register',
       actorUserId: user.id,
@@ -199,5 +237,50 @@ export const registerAuthRoutes = (app: Hono<AppEnv>, deps: AuthRoutesDeps): voi
     await deleteUserAndData(db, userId);
     c.header('set-cookie', buildSessionClearCookie(deps.secureCookies));
     return c.body(null, 204);
+  });
+
+  app.post('/v1/auth/verify', async (c) => {
+    const body = (await c.req.json()) as { token?: string };
+    const rawToken = typeof body.token === 'string' ? body.token.trim() : '';
+    if (rawToken.length === 0) {
+      throw new ValidationError('invalid or expired verification link', {});
+    }
+    const token = await consumeVerificationToken(db, hashToken(rawToken));
+    if (token === undefined) {
+      throw new ValidationError('invalid or expired verification link', {});
+    }
+    if (token.expiresAt.getTime() <= deps.now().getTime()) {
+      throw new ValidationError('invalid or expired verification link', {});
+    }
+    await setEmailVerified(db, token.userId);
+    await deleteVerificationTokensForUser(db, token.userId);
+    await recordAudit(db, {
+      action: 'account.verify_email',
+      actorUserId: token.userId,
+      targetUserId: token.userId,
+    });
+    const user = (await findUserById(db, token.userId))!;
+    return c.json({ ok: true, user: toPublicUser(user) });
+  });
+
+  app.post('/v1/auth/resend-verification', guard, async (c) => {
+    const { userId, user } = c.get('auth');
+    if (user.emailVerified) {
+      return c.json({ ok: true, message: 'email already verified' });
+    }
+    const now = deps.now();
+    const activeCount = await countActiveTokensForUser(db, userId, now);
+    if (activeCount >= MAX_ACTIVE_TOKENS) {
+      throw new ValidationError('too many pending verification emails, please wait', {
+        retryAfterMs: VERIFICATION_TOKEN_TTL_MS,
+      });
+    }
+    await sendVerification(user, now);
+    await recordAudit(db, {
+      action: 'account.resend_verification',
+      actorUserId: userId,
+      targetUserId: userId,
+    });
+    return c.json({ ok: true });
   });
 };

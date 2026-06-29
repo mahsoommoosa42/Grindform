@@ -8,7 +8,15 @@
  * verbatim — the plan is generated once and rendered many times.
  */
 
-import { doublePrecision, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  doublePrecision,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+} from 'drizzle-orm/pg-core';
 
 import type {
   AccountStatus,
@@ -26,6 +34,7 @@ import type {
   ThemeId,
   TimeBudget,
   UserId,
+  VerificationTokenId,
   Weekday,
 } from '@grindform/core';
 import type { PlanSession } from '@grindform/planner';
@@ -41,6 +50,7 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+  emailVerified: boolean('email_verified').notNull().default(true),
 });
 
 /** A login session. Only the SHA-256 hash of the cookie token is stored. */
@@ -111,6 +121,18 @@ export const setLogs = pgTable('set_logs', {
   loadKg: doublePrecision('load_kg').notNull(),
   rpe: doublePrecision('rpe'),
   completedAt: timestamp('completed_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** A hashed email-verification token linked to a user. */
+export const verificationTokens = pgTable('verification_tokens', {
+  id: text('id').primaryKey().$type<VerificationTokenId>(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' })
+    .$type<UserId>(),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /** Per-user app settings (single-user MVP keys on a fixed user id). */
