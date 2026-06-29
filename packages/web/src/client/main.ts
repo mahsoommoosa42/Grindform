@@ -692,8 +692,7 @@ export class GfApp extends LitElement {
       await api.adminVerifyUser(id);
       await this.refreshAdmin(id);
     } catch (err) {
-      this.adminError =
-        err instanceof ApiError ? err.message : 'Could not verify that account.';
+      this.adminError = err instanceof ApiError ? err.message : 'Could not verify that account.';
     }
   }
 
