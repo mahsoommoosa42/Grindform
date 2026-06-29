@@ -14,6 +14,7 @@ import {
   listPlanIdsForUser,
   listPlanSummaries,
   planBelongsToUser,
+  updateDaySessions,
 } from '../src/repos/plans-repo.ts';
 import { freshDb } from './helpers/db.ts';
 
@@ -160,5 +161,22 @@ describe('plans-repo', () => {
     // Another user can't load it, and an unknown day id yields undefined.
     expect(await getDayForUser(db, dayId, other)).toBeUndefined();
     expect(await getDayForUser(db, plan.days[2]!.id, other)).toBeUndefined();
+  });
+
+  it('updateDaySessions overwrites a day only for the owner', async () => {
+    const owner = newUserId();
+    const other = newUserId();
+    const plan = makePlan();
+    await createPlan(db, owner, plan);
+    const dayId = plan.days[0]!.id;
+
+    // A non-owner cannot update the day.
+    expect(await updateDaySessions(db, dayId, other, [], 0)).toBe(false);
+
+    // The owner can replace the sessions (here: empty it into a rest day).
+    expect(await updateDaySessions(db, dayId, owner, [], 0)).toBe(true);
+    const day = await getDayForUser(db, dayId, owner);
+    expect(day?.sessions).toEqual([]);
+    expect(day?.estMinutes).toBe(0);
   });
 });

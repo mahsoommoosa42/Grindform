@@ -16,6 +16,14 @@ export type {
   WeeklyPlan,
 } from './types.ts';
 export { generatePlan } from './generate.ts';
+export {
+  addSlotToSession,
+  buildSlot,
+  customExerciseSlug,
+  removeSlot,
+  swapSlotExercise,
+} from './mutate.ts';
+export type { ResolvedExercise } from './mutate.ts';
 export { estimateSlotMinutes, GOAL_PROFILES, schemeForRole, templateForRole } from './profiles.ts';
 export type { GoalProfile } from './profiles.ts';
 export { makeRng } from './rng.ts';

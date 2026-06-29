@@ -8,6 +8,7 @@
 export * as schema from './schema/index.ts';
 export {
   auditLog,
+  customExercises,
   planDays,
   plans,
   sessions,
@@ -30,8 +31,15 @@ export {
   listPlanIdsForUser,
   listPlanSummaries,
   planBelongsToUser,
+  updateDaySessions,
 } from './repos/plans-repo.ts';
 export type { PlanSummary } from './repos/plans-repo.ts';
+export {
+  createCustomExercise,
+  deleteCustomExercise,
+  getCustomExercise,
+  listCustomExercises,
+} from './repos/custom-exercises-repo.ts';
 export { deleteLog, listLogsForDay, listLogsForExercise, logSet } from './repos/logs-repo.ts';
 export type { NewSetLog, SetLog } from './repos/logs-repo.ts';
 export { getSettings, upsertSettings } from './repos/settings-repo.ts';

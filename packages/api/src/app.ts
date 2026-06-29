@@ -21,7 +21,7 @@ import { Hono } from 'hono';
 import type { StatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 
-import { filterExercises } from '@grindform/catalog';
+import { filterExercises, getExercise } from '@grindform/catalog';
 import type { FilterCriteria } from '@grindform/catalog';
 import {
   GeneratePlanInputSchema,
@@ -33,18 +33,29 @@ import {
 } from '@grindform/core';
 import type { PlanId, UserId } from '@grindform/core';
 import {
+  createCustomExercise,
   createPlan,
+  deleteCustomExercise,
   deletePlan,
+  getCustomExercise,
   getDayForUser,
   getPlan,
   getSettings,
+  listCustomExercises,
   listPlanSummaries,
   planBelongsToUser,
+  updateDaySessions,
   upsertSettings,
 } from '@grindform/db';
 import type { Db, Settings } from '@grindform/db';
-import { generatePlan } from '@grindform/planner';
-import type { ExerciseSlot, PlanDay, WeeklyPlan } from '@grindform/planner';
+import {
+  addSlotToSession,
+  customExerciseSlug,
+  generatePlan,
+  removeSlot,
+  swapSlotExercise,
+} from '@grindform/planner';
+import type { ExerciseSlot, PlanDay, ResolvedExercise, WeeklyPlan } from '@grindform/planner';
 import {
   getDayProgress,
   getDayVolume,
@@ -59,14 +70,20 @@ import type { EmailSender } from './email.ts';
 import { requireAuth } from './context.ts';
 import type { AppEnv } from './context.ts';
 import {
+  AddSlotBodySchema,
   CompleteSlotBodySchema,
+  CustomExerciseBodySchema,
+  CustomExerciseIdParamSchema,
   DayIdParamSchema,
   ExerciseQuerySchema,
   LogSetBodySchema,
   parseOrThrow,
+  RestoreDaySessionsBodySchema,
   SettingsBodySchema,
   SlotIdParamSchema,
+  SwapSlotBodySchema,
 } from './validation.ts';
+import type { ExerciseRef } from './validation.ts';
 
 /** Dependencies the app needs to run. */
 export interface ApiDeps {
@@ -144,6 +161,55 @@ const loadDay = async (
   return { plan, day };
 };
 
+/**
+ * Resolve an {@link ExerciseRef} to the {@link ResolvedExercise} the planner
+ * mutators need. A catalog ref must name a known slug; a custom ref must name
+ * a custom exercise the user owns (scoped read — guards against IDOR). A miss
+ * is a 404 either way.
+ */
+const resolveExerciseRef = async (
+  db: Db,
+  userId: UserId,
+  ref: ExerciseRef,
+): Promise<ResolvedExercise> => {
+  if (ref.source === 'catalog') {
+    const e = getExercise(ref.slug);
+    if (e === undefined) throw new NotFoundError('exercise not found', { slug: ref.slug });
+    return {
+      slug: e.slug,
+      name: e.name,
+      primaryMuscles: e.primaryMuscles,
+      role: e.role,
+      unilateral: e.unilateral,
+      ...(e.cue === undefined ? {} : { cue: e.cue }),
+    };
+  }
+  const custom = await getCustomExercise(db, ref.id, userId);
+  if (custom === undefined) {
+    throw new NotFoundError('custom exercise not found', { customExerciseId: ref.id });
+  }
+  return {
+    slug: customExerciseSlug(custom.id),
+    name: custom.name,
+    primaryMuscles: custom.primaryMuscles,
+    role: custom.role,
+    unilateral: custom.unilateral,
+    ...(custom.cue === undefined ? {} : { cue: custom.cue }),
+  };
+};
+
+/** Persist an edited day and return the refreshed plan. */
+const persistDay = async (
+  db: Db,
+  userId: UserId,
+  day: PlanDay,
+  planId: PlanId,
+): Promise<WeeklyPlan> => {
+  await updateDaySessions(db, day.id, userId, day.sessions, day.estMinutes);
+  // The plan was just loaded + ownership-checked, so it still exists.
+  return (await getPlan(db, planId)) as WeeklyPlan;
+};
+
 /** Project a settings row (or default) to its public shape. */
 const serialiseSettings = (
   saved: Settings | undefined,
@@ -180,6 +246,28 @@ export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
       ...(query.unilateral === undefined ? {} : { unilateral: query.unilateral }),
     };
     return c.json({ exercises: filterExercises(criteria) });
+  });
+
+  app.get('/v1/exercises/custom', guard, async (c) => {
+    const exercises = await listCustomExercises(db, c.get('auth').userId);
+    return c.json({ exercises });
+  });
+
+  app.post('/v1/exercises/custom', guard, async (c) => {
+    const input = parseOrThrow(CustomExerciseBodySchema, await c.req.json(), 'custom exercise');
+    const exercise = await createCustomExercise(db, c.get('auth').userId, input);
+    return c.json({ exercise }, 201);
+  });
+
+  app.delete('/v1/exercises/custom/:customExerciseId', guard, async (c) => {
+    const id = parseOrThrow(
+      CustomExerciseIdParamSchema,
+      c.req.param('customExerciseId'),
+      'custom exercise id',
+    );
+    const removed = await deleteCustomExercise(db, id, c.get('auth').userId);
+    if (!removed) throw new NotFoundError('custom exercise not found', { customExerciseId: id });
+    return c.body(null, 204);
   });
 
   registerAuthRoutes(app, {
@@ -242,6 +330,52 @@ export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
       throw new NotFoundError('plan not found', { planId });
     }
     return c.json({ volume: await getWeekVolume(db, plan.days) });
+  });
+
+  app.post('/v1/plans/:planId/days/:dayId/slots', guard, async (c) => {
+    const userId = c.get('auth').userId;
+    const { plan, day } = await loadDay(db, userId, c.req.param('planId'), c.req.param('dayId'));
+    const body = parseOrThrow(AddSlotBodySchema, await c.req.json(), 'add-slot body');
+    const exercise = await resolveExerciseRef(db, userId, body.exercise);
+    const updated = addSlotToSession(day, body.sessionId, plan.goal, exercise);
+    if (updated === undefined) {
+      throw new NotFoundError('training session not found', { sessionId: body.sessionId });
+    }
+    return c.json({ plan: await persistDay(db, userId, updated, plan.id) }, 201);
+  });
+
+  app.put('/v1/plans/:planId/days/:dayId/slots/:slotId/swap', guard, async (c) => {
+    const userId = c.get('auth').userId;
+    const { plan, day } = await loadDay(db, userId, c.req.param('planId'), c.req.param('dayId'));
+    const slotId = parseOrThrow(SlotIdParamSchema, c.req.param('slotId'), 'slot id');
+    const body = parseOrThrow(SwapSlotBodySchema, await c.req.json(), 'swap body');
+    const exercise = await resolveExerciseRef(db, userId, body.exercise);
+    const updated = swapSlotExercise(day, slotId, exercise);
+    if (updated === undefined) throw new NotFoundError('slot not found', { slotId });
+    return c.json({ plan: await persistDay(db, userId, updated, plan.id) });
+  });
+
+  app.delete('/v1/plans/:planId/days/:dayId/slots/:slotId', guard, async (c) => {
+    const userId = c.get('auth').userId;
+    const { plan, day } = await loadDay(db, userId, c.req.param('planId'), c.req.param('dayId'));
+    const slotId = parseOrThrow(SlotIdParamSchema, c.req.param('slotId'), 'slot id');
+    const updated = removeSlot(day, slotId);
+    if (updated === undefined) throw new NotFoundError('slot not found', { slotId });
+    return c.json({ plan: await persistDay(db, userId, updated, plan.id) });
+  });
+
+  // Restore a day's sessions to a prior snapshot. Powers multi-step
+  // undo/redo of the swap/add/remove edits: the client holds the snapshots
+  // and replays them here, so the persisted plan stays in step with the UI
+  // across reloads. The body is validated like any other network input.
+  app.put('/v1/plans/:planId/days/:dayId/sessions', guard, async (c) => {
+    const userId = c.get('auth').userId;
+    const { plan, day } = await loadDay(db, userId, c.req.param('planId'), c.req.param('dayId'));
+    const body = parseOrThrow(RestoreDaySessionsBodySchema, await c.req.json(), 'sessions body');
+    const sessions = body.sessions as unknown as PlanDay['sessions'];
+    const estMinutes = sessions.reduce((sum, s) => sum + s.estMinutes, 0);
+    const updated: PlanDay = { ...day, sessions, estMinutes };
+    return c.json({ plan: await persistDay(db, userId, updated, plan.id) });
   });
 
   app.post('/v1/plans/:planId/days/:dayId/slots/:slotId/complete', guard, async (c) => {

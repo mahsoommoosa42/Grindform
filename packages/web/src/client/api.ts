@@ -9,7 +9,11 @@
 import type {
   AdminUserRow,
   AuditRow,
+  CatalogExercise,
+  CustomExercise,
+  CustomExerciseInput,
   DayProgress,
+  ExerciseRef,
   GeneratePlanRequest,
   PublicUser,
   Settings,
@@ -88,6 +92,71 @@ export const getDayProgress = (
 /** Fetch the whole-week volume breakdown (kg per muscle group). */
 export const getWeekVolume = (planId: string): Promise<{ volume: VolumeSummary }> =>
   request(`/v1/plans/${planId}/volume`);
+
+/** List the built-in catalog exercises (the shared global index). */
+export const listExercises = (): Promise<{ exercises: CatalogExercise[] }> =>
+  request('/v1/exercises');
+
+/** List the current account's custom exercises. */
+export const listCustomExercises = (): Promise<{ exercises: CustomExercise[] }> =>
+  request('/v1/exercises/custom');
+
+/** Create a custom exercise for the current account. */
+export const createCustomExercise = (
+  input: CustomExerciseInput,
+): Promise<{ exercise: CustomExercise }> =>
+  request('/v1/exercises/custom', { method: 'POST', body: JSON.stringify(input) });
+
+/** Delete one of the current account's custom exercises. */
+export const deleteCustomExercise = (id: string): Promise<void> =>
+  request(`/v1/exercises/custom/${id}`, { method: 'DELETE' });
+
+/** Swap the exercise occupying a slot for another (catalog or custom). */
+export const swapSlot = (
+  planId: string,
+  dayId: string,
+  slotId: string,
+  exercise: ExerciseRef,
+): Promise<{ plan: WeeklyPlan }> =>
+  request(`/v1/plans/${planId}/days/${dayId}/slots/${slotId}/swap`, {
+    method: 'PUT',
+    body: JSON.stringify({ exercise }),
+  });
+
+/** Add an extra exercise to a training session on a day. */
+export const addSlot = (
+  planId: string,
+  dayId: string,
+  sessionId: string,
+  exercise: ExerciseRef,
+): Promise<{ plan: WeeklyPlan }> =>
+  request(`/v1/plans/${planId}/days/${dayId}/slots`, {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, exercise }),
+  });
+
+/** Remove an exercise slot from a day. */
+export const removeSlot = (
+  planId: string,
+  dayId: string,
+  slotId: string,
+): Promise<{ plan: WeeklyPlan }> =>
+  request(`/v1/plans/${planId}/days/${dayId}/slots/${slotId}`, { method: 'DELETE' });
+
+/**
+ * Restore a day's sessions to a prior snapshot. Powers undo/redo of the
+ * swap/add/remove edits — the client holds the snapshots and replays the
+ * one whose day changed.
+ */
+export const restoreDaySessions = (
+  planId: string,
+  dayId: string,
+  sessions: WeeklyPlan['days'][number]['sessions'],
+): Promise<{ plan: WeeklyPlan }> =>
+  request(`/v1/plans/${planId}/days/${dayId}/sessions`, {
+    method: 'PUT',
+    body: JSON.stringify({ sessions }),
+  });
 
 /** Read persisted settings (theme + preferences). */
 export const getSettings = (): Promise<{ settings: Settings }> => request('/v1/settings');

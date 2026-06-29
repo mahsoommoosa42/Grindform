@@ -27,4 +27,8 @@ export const MIGRATIONS: readonly Migration[] = [
     name: '0003_email_verification',
     sqlText: readFileSync(join(migrationsDir, '0003_email_verification.sql'), 'utf8'),
   },
+  {
+    name: '0004_custom_exercises',
+    sqlText: readFileSync(join(migrationsDir, '0004_custom_exercises.sql'), 'utf8'),
+  },
 ];

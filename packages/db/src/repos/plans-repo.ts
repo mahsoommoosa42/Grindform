@@ -10,7 +10,7 @@
 import { and, asc, desc, eq } from 'drizzle-orm';
 
 import type { DayId, Goal, Experience, PlanId, UserId } from '@grindform/core';
-import type { PlanDay, WeeklyPlan } from '@grindform/planner';
+import type { PlanDay, PlanSession, WeeklyPlan } from '@grindform/planner';
 
 import type { DbOrTx } from '../client.ts';
 import { planDays, plans } from '../schema/tables.ts';
@@ -157,6 +157,33 @@ export const getDayForUser = async (
     .where(and(eq(planDays.id, dayId), eq(plans.userId, userId)))
     .limit(1);
   return row === undefined ? undefined : mapDay(row);
+};
+
+/**
+ * Overwrite a single day's sessions (and its recomputed minute estimate),
+ * **only if** the day belongs to a plan owned by `userId`. Used by the
+ * post-generation plan editors (swap / add / remove an exercise). Returns
+ * whether a row was updated. Also bumps the parent plan's `updatedAt`.
+ */
+export const updateDaySessions = async (
+  db: DbOrTx,
+  dayId: DayId,
+  userId: UserId,
+  sessions: readonly PlanSession[],
+  estMinutes: number,
+): Promise<boolean> => {
+  const [row] = await db
+    .select({ planId: planDays.planId })
+    .from(planDays)
+    .innerJoin(plans, eq(plans.id, planDays.planId))
+    .where(and(eq(planDays.id, dayId), eq(plans.userId, userId)))
+    .limit(1);
+  if (row === undefined) return false;
+  await db.transaction(async (tx) => {
+    await tx.update(planDays).set({ sessions, estMinutes }).where(eq(planDays.id, dayId));
+    await tx.update(plans).set({ updatedAt: new Date() }).where(eq(plans.id, row.planId));
+  });
+  return true;
 };
 
 /** True iff `dayId` belongs to a plan owned by `userId`. Guards tracker IDOR. */

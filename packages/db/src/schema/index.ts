@@ -7,6 +7,7 @@
 
 export {
   auditLog,
+  customExercises,
   planDays,
   plans,
   sessions,

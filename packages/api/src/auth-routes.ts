@@ -47,6 +47,7 @@ import {
   getPlan,
   getSettings,
   listLogsForDay,
+  listCustomExercises,
   listPlanIdsForUser,
   recordAudit,
   revokeSession,
@@ -217,6 +218,7 @@ export const registerAuthRoutes = (app: Hono<AppEnv>, deps: AuthRoutesDeps): voi
       plans.push({ plan, logs });
     }
     const settings = await getSettings(db, userId);
+    const customExercises = await listCustomExercises(db, userId);
     await recordAudit(db, { action: 'account.export', actorUserId: userId, targetUserId: userId });
     c.header('content-disposition', 'attachment; filename="grindform-export.json"');
     return c.json({
@@ -227,6 +229,7 @@ export const registerAuthRoutes = (app: Hono<AppEnv>, deps: AuthRoutesDeps): voi
         settings === undefined
           ? null
           : { theme: settings.theme, preferences: settings.preferences },
+      customExercises,
       plans,
     });
   });
