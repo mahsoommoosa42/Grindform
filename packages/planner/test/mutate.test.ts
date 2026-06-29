@@ -50,7 +50,12 @@ const lunge: ResolvedExercise = {
 const block = (type: SessionBlock['type'], slots: ExerciseSlot[]): SessionBlock => ({
   type,
   title: type,
-  estMinutes: type === 'main' || type === 'accessory' ? estimateSlotMinutes(slots[0]?.scheme ?? schemeForRole(GOAL_PROFILES.build_muscle, 'accessory', false)) : 5,
+  estMinutes:
+    type === 'main' || type === 'accessory'
+      ? estimateSlotMinutes(
+          slots[0]?.scheme ?? schemeForRole(GOAL_PROFILES.build_muscle, 'accessory', false),
+        )
+      : 5,
   slots,
 });
 

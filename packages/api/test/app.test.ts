@@ -524,7 +524,9 @@ describe('Custom exercises', () => {
     expect(((await otherList.json()) as { exercises: unknown[] }).exercises).toEqual([]);
 
     // Deleting another account's exercise reports 404; the owner's delete works.
-    expect((await other.json(`/v1/exercises/custom/${exercise.id}`, 'DELETE', {})).status).toBe(404);
+    expect((await other.json(`/v1/exercises/custom/${exercise.id}`, 'DELETE', {})).status).toBe(
+      404,
+    );
     const del = await client.json(`/v1/exercises/custom/${exercise.id}`, 'DELETE', {});
     expect(del.status).toBe(204);
     const afterList = await client.request('/v1/exercises/custom');
@@ -597,8 +599,11 @@ describe('Plan slot edits (swap / add / remove)', () => {
     const base = `/v1/plans/${plan.id}/days/${plan.days[0]!.id}/slots/${slot.id}/swap`;
     // A catalog movement with no cue.
     expect(
-      (await client.json(base, 'PUT', { exercise: { source: 'catalog', slug: 'conventional-deadlift' } }))
-        .status,
+      (
+        await client.json(base, 'PUT', {
+          exercise: { source: 'catalog', slug: 'conventional-deadlift' },
+        })
+      ).status,
     ).toBe(200);
     // A custom exercise created without a cue.
     const { exercise } = (await (
@@ -693,14 +698,10 @@ describe('Plan slot edits (swap / add / remove)', () => {
 
   it('404s slot edits on an unknown day', async () => {
     const plan = await makePlan(client);
-    const res = await client.json(
-      `/v1/plans/${plan.id}/days/day_${'0'.repeat(26)}/slots`,
-      'POST',
-      {
-        sessionId: trainingSession(plan).id,
-        exercise: { source: 'catalog', slug: 'barbell-hip-thrust' },
-      },
-    );
+    const res = await client.json(`/v1/plans/${plan.id}/days/day_${'0'.repeat(26)}/slots`, 'POST', {
+      sessionId: trainingSession(plan).id,
+      exercise: { source: 'catalog', slug: 'barbell-hip-thrust' },
+    });
     expect(res.status).toBe(404);
   });
 });

@@ -10,7 +10,12 @@
 
 import { and, asc, eq } from 'drizzle-orm';
 
-import type { CustomExercise, CustomExerciseId, CustomExerciseInput, UserId } from '@grindform/core';
+import type {
+  CustomExercise,
+  CustomExerciseId,
+  CustomExerciseInput,
+  UserId,
+} from '@grindform/core';
 import { newCustomExerciseId } from '@grindform/core';
 
 import type { DbOrTx } from '../client.ts';

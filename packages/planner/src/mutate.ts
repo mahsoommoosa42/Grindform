@@ -17,13 +17,7 @@ import { newSlotId } from '@grindform/core';
 import type { ExerciseSlug } from '@grindform/core';
 
 import { estimateSlotMinutes, GOAL_PROFILES, schemeForRole } from './profiles.ts';
-import type {
-  ExerciseSlot,
-  PlanDay,
-  PlanSession,
-  SessionBlock,
-  TrainingSession,
-} from './types.ts';
+import type { ExerciseSlot, PlanDay, PlanSession, SessionBlock, TrainingSession } from './types.ts';
 
 /**
  * The minimal exercise shape the mutators need to build or re-label a slot.
@@ -98,8 +92,7 @@ const hasSlot = (day: PlanDay, slotId: string): boolean =>
 const mapTraining = (
   day: PlanDay,
   fn: (session: TrainingSession) => TrainingSession,
-): readonly PlanSession[] =>
-  day.sessions.map((s) => (s.kind === 'training' ? fn(s) : s));
+): readonly PlanSession[] => day.sessions.map((s) => (s.kind === 'training' ? fn(s) : s));
 
 /**
  * Replace the exercise occupying `slotId` with `exercise`, keeping the slot's

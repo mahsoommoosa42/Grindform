@@ -132,12 +132,7 @@ const MUSCLES: readonly MuscleGroup[] = [
   'full_body',
 ];
 
-const EXERCISE_ROLES: readonly ExerciseRole[] = [
-  'main',
-  'accessory',
-  'conditioning',
-  'mobility',
-];
+const EXERCISE_ROLES: readonly ExerciseRole[] = ['main', 'accessory', 'conditioning', 'mobility'];
 
 const WEEKDAYS: readonly { id: Weekday; label: string }[] = [
   { id: 'mon', label: 'Monday' },
@@ -590,7 +585,9 @@ export class GfApp extends LitElement {
   private async loadExercises(): Promise<void> {
     try {
       const [{ exercises: catalog }, { exercises: custom }] = await Promise.all([
-        this.catalog.length === 0 ? api.listExercises() : Promise.resolve({ exercises: this.catalog }),
+        this.catalog.length === 0
+          ? api.listExercises()
+          : Promise.resolve({ exercises: this.catalog }),
         api.listCustomExercises(),
       ]);
       this.catalog = catalog;
@@ -2129,10 +2126,13 @@ export class GfApp extends LitElement {
     return html`
       <li class="block">
         <div class="block-head">
-          <span class="btag ${b.type}">${b.title}</span> <span class="block-min">${b.estMinutes}m</span>
+          <span class="btag ${b.type}">${b.title}</span>
+          <span class="block-min">${b.estMinutes}m</span>
         </div>
         ${b.slots.length > 0
-          ? html`<ul class="slots">${b.slots.map((slot) => this.renderSlotRow(dayId, slot))}</ul>`
+          ? html`<ul class="slots">
+              ${b.slots.map((slot) => this.renderSlotRow(dayId, slot))}
+            </ul>`
           : nothing}
       </li>
     `;
@@ -2145,7 +2145,9 @@ export class GfApp extends LitElement {
       <li class="slot-row" data-testid=${`week-slot-${slot.id}`}>
         <div class="slot-info">
           <span class="slot-name">${slot.name}</span>
-          ${custom ? html`<span class="custom-tag" title="Your custom exercise">custom</span>` : nothing}
+          ${custom
+            ? html`<span class="custom-tag" title="Your custom exercise">custom</span>`
+            : nothing}
           ${slot.superset !== undefined
             ? html`<span class="ss-tag">SS ${slot.superset.group}${slot.superset.order}</span>`
             : nothing}
@@ -2197,7 +2199,8 @@ export class GfApp extends LitElement {
   private get filteredCatalog(): CatalogExercise[] {
     const q = this.exerciseSearch.trim().toLowerCase();
     return this.catalog.filter((e) => {
-      const muscleOk = this.exerciseMuscle === 'all' || e.primaryMuscles.includes(this.exerciseMuscle);
+      const muscleOk =
+        this.exerciseMuscle === 'all' || e.primaryMuscles.includes(this.exerciseMuscle);
       const textOk = q === '' || e.name.toLowerCase().includes(q);
       return muscleOk && textOk;
     });
@@ -2312,33 +2315,36 @@ export class GfApp extends LitElement {
             data-testid="custom-name"
             maxlength="80"
             .value=${f.name}
-            @input=${(e: Event) => this.updateCustomForm({ name: (e.target as HTMLInputElement).value })}
+            @input=${(e: Event) =>
+              this.updateCustomForm({ name: (e.target as HTMLInputElement).value })}
           />
         </label>
         <fieldset class="chips">
           <legend>Primary muscles</legend>
           ${MUSCLES.map(
-            (m) => html`<button
-              type="button"
-              class=${f.primaryMuscles.includes(m) ? 'chip on' : 'chip'}
-              data-testid=${`custom-muscle-${m}`}
-              @click=${() => this.toggleCustomMuscle(m)}
-            >
-              ${titleCase(m)}
-            </button>`,
+            (m) =>
+              html`<button
+                type="button"
+                class=${f.primaryMuscles.includes(m) ? 'chip on' : 'chip'}
+                data-testid=${`custom-muscle-${m}`}
+                @click=${() => this.toggleCustomMuscle(m)}
+              >
+                ${titleCase(m)}
+              </button>`,
           )}
         </fieldset>
         <fieldset class="chips">
           <legend>Equipment</legend>
           ${EQUIPMENT.map(
-            (item) => html`<button
-              type="button"
-              class=${f.equipment.includes(item) ? 'chip on' : 'chip'}
-              data-testid=${`custom-equip-${item}`}
-              @click=${() => this.toggleCustomEquipment(item)}
-            >
-              ${titleCase(item)}
-            </button>`,
+            (item) =>
+              html`<button
+                type="button"
+                class=${f.equipment.includes(item) ? 'chip on' : 'chip'}
+                data-testid=${`custom-equip-${item}`}
+                @click=${() => this.toggleCustomEquipment(item)}
+              >
+                ${titleCase(item)}
+              </button>`,
           )}
         </fieldset>
         <label class="field">
@@ -2346,7 +2352,9 @@ export class GfApp extends LitElement {
           <select
             data-testid="custom-role"
             @change=${(e: Event) =>
-              this.updateCustomForm({ role: (e.target as HTMLSelectElement).value as ExerciseRole })}
+              this.updateCustomForm({
+                role: (e.target as HTMLSelectElement).value as ExerciseRole,
+              })}
           >
             ${EXERCISE_ROLES.map(
               (r) => html`<option value=${r} ?selected=${f.role === r}>${titleCase(r)}</option>`,
@@ -2370,7 +2378,8 @@ export class GfApp extends LitElement {
             data-testid="custom-cue"
             maxlength="200"
             .value=${f.cue}
-            @input=${(e: Event) => this.updateCustomForm({ cue: (e.target as HTMLInputElement).value })}
+            @input=${(e: Event) =>
+              this.updateCustomForm({ cue: (e.target as HTMLInputElement).value })}
           />
         </label>
         <button

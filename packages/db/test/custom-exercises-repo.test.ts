@@ -84,7 +84,7 @@ describe('custom-exercises-repo', () => {
     expect(await getCustomExercise(db, ex.id, other)).toBeUndefined();
   });
 
-  it('deletes only the owner\'s exercise and reports whether a row was removed', async () => {
+  it("deletes only the owner's exercise and reports whether a row was removed", async () => {
     const owner = await seedUser(db);
     const other = await seedUser(db);
     const ex = await createCustomExercise(db, owner, withCue);
