@@ -19,6 +19,7 @@ import {
   listUsersWithStats,
   recordAudit,
   revokeAllSessionsForUser,
+  setEmailVerified,
   setUserStatus,
 } from '@grindform/db';
 import type { Db } from '@grindform/db';
@@ -103,6 +104,20 @@ export const registerAdminRoutes = (app: Hono<AppEnv>, deps: AdminRoutesDeps): v
       targetUserId: userId,
     });
     return c.json({ user: toPublicUser(updated) });
+  });
+
+  app.post('/v1/admin/users/:userId/verify', ...guards, async (c) => {
+    const userId = parseUserIdParam(c.req.param('userId'));
+    const user = await findUserById(db, userId);
+    if (user === undefined) throw new NotFoundError('user not found');
+    await setEmailVerified(db, userId);
+    await recordAudit(db, {
+      action: 'admin.user.verify',
+      actorUserId: c.get('auth').userId,
+      targetUserId: userId,
+    });
+    const updated = await findUserById(db, userId);
+    return c.json({ user: toPublicUser(updated!) });
   });
 
   app.delete('/v1/admin/users/:userId', ...guards, async (c) => {

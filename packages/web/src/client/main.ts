@@ -687,6 +687,16 @@ export class GfApp extends LitElement {
     }
   }
 
+  private async onAdminVerifyUser(id: string): Promise<void> {
+    try {
+      await api.adminVerifyUser(id);
+      await this.refreshAdmin(id);
+    } catch (err) {
+      this.adminError =
+        err instanceof ApiError ? err.message : 'Could not verify that account.';
+    }
+  }
+
   private async onAdminDeleteUser(id: string): Promise<void> {
     const confirmed =
       typeof window === 'undefined' ? true : window.confirm('Permanently delete this account?');
@@ -1506,6 +1516,15 @@ export class GfApp extends LitElement {
       <div class="admin-detail" data-testid="admin-detail">
         <h2>${u.email}</h2>
         <div class="admin-actions">
+          ${u.emailVerified
+            ? nothing
+            : html`<button
+                class="ghost"
+                data-testid="admin-verify-email"
+                @click=${() => void this.onAdminVerifyUser(u.id)}
+              >
+                Verify email
+              </button>`}
           <button
             class="ghost"
             data-testid="admin-toggle-status"

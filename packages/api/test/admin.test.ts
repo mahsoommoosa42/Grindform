@@ -139,6 +139,53 @@ describe('admin console', () => {
     });
   });
 
+  describe('POST /v1/admin/users/:userId/verify', () => {
+    it('marks an unverified account as email-verified and audits the action', async () => {
+      // Members start unverified after registration.
+      const detail = await admin.request(`/v1/admin/users/${member.userId}`);
+      const before = (await detail.json()) as { user: { emailVerified: boolean } };
+      expect(before.user.emailVerified).toBe(false);
+
+      const res = await admin.request(`/v1/admin/users/${member.userId}/verify`, {
+        method: 'POST',
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { user: { emailVerified: boolean } };
+      expect(body.user.emailVerified).toBe(true);
+
+      const after = await admin.request(`/v1/admin/users/${member.userId}`);
+      const afterBody = (await after.json()) as {
+        audit: { action: string; actorUserId: string }[];
+      };
+      const entry = afterBody.audit.find((a) => a.action === 'admin.user.verify');
+      expect(entry?.actorUserId).toBe(admin.userId);
+    });
+
+    it('is idempotent on an already-verified account', async () => {
+      await admin.request(`/v1/admin/users/${member.userId}/verify`, { method: 'POST' });
+      const res = await admin.request(`/v1/admin/users/${member.userId}/verify`, {
+        method: 'POST',
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { user: { emailVerified: boolean } };
+      expect(body.user.emailVerified).toBe(true);
+    });
+
+    it('404s an unknown user', async () => {
+      const res = await admin.request(`/v1/admin/users/${UNKNOWN_USER}/verify`, {
+        method: 'POST',
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it('rejects non-admin members with 403', async () => {
+      const res = await member.request(`/v1/admin/users/${member.userId}/verify`, {
+        method: 'POST',
+      });
+      expect(res.status).toBe(403);
+    });
+  });
+
   describe('DELETE /v1/admin/users/:userId', () => {
     it('erases an account', async () => {
       const res = await admin.request(`/v1/admin/users/${member.userId}`, { method: 'DELETE' });

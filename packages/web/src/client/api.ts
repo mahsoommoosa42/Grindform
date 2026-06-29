@@ -135,6 +135,10 @@ export const adminDisableUser = (id: string): Promise<{ user: PublicUser }> =>
 export const adminEnableUser = (id: string): Promise<{ user: PublicUser }> =>
   request(`/v1/admin/users/${id}/enable`, { method: 'POST' });
 
+/** Admin: manually mark an account's email as verified. */
+export const adminVerifyUser = (id: string): Promise<{ user: PublicUser }> =>
+  request(`/v1/admin/users/${id}/verify`, { method: 'POST' });
+
 /** Admin: permanently erase an account. */
 export const adminDeleteUser = (id: string): Promise<void> =>
   request(`/v1/admin/users/${id}`, { method: 'DELETE' });
