@@ -2851,6 +2851,16 @@ export class GfApp extends LitElement {
   };
 
   static override styles = css`
+    /* Border-box everywhere so width:100% includes padding + border. Without
+       this, content-box inputs/controls render padding+border WIDER than
+       their grid track and spill into the next column — e.g. the tracker
+       set-row kg/reps inputs overflowed ~18px and slid under the Log button
+       on narrow iOS Safari widths. */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
     :host {
       display: block;
       min-height: 100vh;
@@ -3941,24 +3951,9 @@ export class GfApp extends LitElement {
       border-radius: var(--gf-radius-sm);
       padding: 8px;
       min-height: 44px;
-      /* iOS Safari gives <input type=number> a min intrinsic width + spinner
-         padding that ignores width/min-width, so in the .set-row grid the
-         inputs refuse to shrink and shove the Log button into an overlap.
-         Resetting the native appearance lets them respect their track. */
-      appearance: none;
-      -webkit-appearance: none;
       transition:
         border-color var(--gf-speed) var(--gf-ease),
         box-shadow var(--gf-speed) var(--gf-ease);
-    }
-    .slot-recent input[type='number']::-webkit-inner-spin-button,
-    .slot-recent input[type='number']::-webkit-outer-spin-button,
-    .slot-opts input[type='number']::-webkit-inner-spin-button,
-    .slot-opts input[type='number']::-webkit-outer-spin-button,
-    .set-row input[type='number']::-webkit-inner-spin-button,
-    .set-row input[type='number']::-webkit-outer-spin-button {
-      -webkit-appearance: none;
-      margin: 0;
     }
     .slot-opts input[type='number'] {
       width: 56px;
