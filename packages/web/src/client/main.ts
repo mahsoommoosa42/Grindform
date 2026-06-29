@@ -348,6 +348,8 @@ export class GfApp extends LitElement {
     authConsent: { state: true },
     authError: { state: true },
     authBusy: { state: true },
+    verifyStatus: { state: true },
+    resendBusy: { state: true },
     accountMenuOpen: { state: true },
     showPrivacy: { state: true },
     adminUsers: { state: true },
@@ -387,6 +389,8 @@ export class GfApp extends LitElement {
   declare authConsent: boolean;
   declare authError: string | null;
   declare authBusy: boolean;
+  declare verifyStatus: 'idle' | 'verifying' | 'success' | 'error';
+  declare resendBusy: boolean;
   declare accountMenuOpen: boolean;
   declare showPrivacy: boolean;
   declare adminUsers: AdminUserRow[] | null;
@@ -432,6 +436,8 @@ export class GfApp extends LitElement {
     this.authConsent = false;
     this.authError = null;
     this.authBusy = false;
+    this.verifyStatus = 'idle';
+    this.resendBusy = false;
     this.accountMenuOpen = false;
     this.showPrivacy = false;
     this.adminUsers = null;
@@ -475,6 +481,12 @@ export class GfApp extends LitElement {
 
   /** Resolve the current session, then gate the app on whether we're signed in. */
   private async bootstrap(): Promise<void> {
+    const params = new URLSearchParams(globalThis.location?.search ?? '');
+    const verifyToken = params.get('verify');
+    if (verifyToken !== null && verifyToken.length > 0) {
+      await this.handleVerifyToken(verifyToken);
+      return;
+    }
     try {
       const { user } = await api.me();
       if (user !== null) {
@@ -485,6 +497,46 @@ export class GfApp extends LitElement {
       /* Treat any failure as "not signed in" and show the auth screen. */
     }
     this.authStatus = 'auth';
+  }
+
+  private async handleVerifyToken(token: string): Promise<void> {
+    this.verifyStatus = 'verifying';
+    try {
+      const { user } = await api.verifyEmail(token);
+      if (user !== null) {
+        this.enterApp(user);
+      } else {
+        try {
+          const me = await api.me();
+          if (me.user !== null) {
+            this.enterApp(me.user);
+          } else {
+            this.authStatus = 'auth';
+          }
+        } catch {
+          this.authStatus = 'auth';
+        }
+      }
+      this.verifyStatus = 'success';
+    } catch {
+      this.verifyStatus = 'error';
+      try {
+        const { user } = await api.me();
+        if (user !== null) {
+          this.enterApp(user);
+        } else {
+          this.authStatus = 'auth';
+        }
+      } catch {
+        this.authStatus = 'auth';
+      }
+    }
+    // Clean up the URL query parameter.
+    if (globalThis.history?.replaceState !== undefined) {
+      const url = new URL(globalThis.location.href);
+      url.searchParams.delete('verify');
+      globalThis.history.replaceState({}, '', url.toString());
+    }
   }
 
   private enterApp(user: PublicUser): void {
@@ -499,6 +551,17 @@ export class GfApp extends LitElement {
       this.applyTheme(settings.theme);
     } catch {
       /* Offline or first run: keep the locally-stored theme. */
+    }
+  }
+
+  private async onResendVerification(): Promise<void> {
+    this.resendBusy = true;
+    try {
+      await api.resendVerification();
+    } catch {
+      /* silently ignore — the banner persists and user can retry later */
+    } finally {
+      this.resendBusy = false;
     }
   }
 
@@ -553,6 +616,8 @@ export class GfApp extends LitElement {
     this.accountMenuOpen = false;
     this.adminUsers = null;
     this.adminDetail = null;
+    this.verifyStatus = 'idle';
+    this.resendBusy = false;
     this.view = 'generate';
     this.authMode = 'login';
     this.authStatus = 'auth';
@@ -976,6 +1041,29 @@ export class GfApp extends LitElement {
     return html`
       ${this.renderHeader()}
       <main class="content">
+        ${this.verifyStatus === 'success'
+          ? html`<div class="banner success" role="status" data-testid="verify-success">
+              Email verified successfully!
+            </div>`
+          : nothing}
+        ${this.verifyStatus === 'error'
+          ? html`<div class="banner error" role="alert" data-testid="verify-error">
+              Invalid or expired verification link.
+            </div>`
+          : nothing}
+        ${this.user !== null && !this.user.emailVerified
+          ? html`<div class="banner info" role="status" data-testid="verify-banner">
+              Please verify your email — we sent a link to ${this.user.email}.
+              <button
+                class="link"
+                data-testid="resend-verification"
+                ?disabled=${this.resendBusy}
+                @click=${() => void this.onResendVerification()}
+              >
+                ${this.resendBusy ? 'Sending…' : 'Resend'}
+              </button>
+            </div>`
+          : nothing}
         ${this.error !== null
           ? html`<div class="banner error" role="alert" data-testid="error">${this.error}</div>`
           : nothing}
@@ -2597,6 +2685,26 @@ export class GfApp extends LitElement {
     .banner.error {
       background: color-mix(in srgb, var(--gf-danger) 18%, var(--gf-surface));
       border: 1px solid var(--gf-danger);
+      color: var(--gf-text);
+      padding: 12px 14px;
+      border-radius: var(--gf-radius);
+      margin-bottom: 14px;
+    }
+    .banner.info {
+      background: color-mix(in srgb, var(--gf-accent) 14%, var(--gf-surface));
+      border: 1px solid var(--gf-accent);
+      color: var(--gf-text);
+      padding: 12px 14px;
+      border-radius: var(--gf-radius);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .banner.success {
+      background: color-mix(in srgb, #22c55e 14%, var(--gf-surface));
+      border: 1px solid #22c55e;
       color: var(--gf-text);
       padding: 12px 14px;
       border-radius: var(--gf-radius);

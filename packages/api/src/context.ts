@@ -39,6 +39,7 @@ export interface PublicUser {
   readonly status: User['status'];
   readonly createdAt: string;
   readonly lastLoginAt: string | null;
+  readonly emailVerified: boolean;
 }
 
 /** Project a stored user row to its public, serialisable shape. */
@@ -49,6 +50,7 @@ export const toPublicUser = (user: User): PublicUser => ({
   status: user.status,
   createdAt: user.createdAt.toISOString(),
   lastLoginAt: user.lastLoginAt === null ? null : user.lastLoginAt.toISOString(),
+  emailVerified: user.emailVerified,
 });
 
 /**

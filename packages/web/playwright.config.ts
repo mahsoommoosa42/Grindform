@@ -83,6 +83,7 @@ export default defineConfig({
       GRINDFORM_AUTH_RATE_LIMIT: '100000',
       // One allowlisted admin per project, so the admin spec can sign in as an
       // admin without colliding across the parallel projects' shared server.
+      GRINDFORM_TEST_HOOKS: '1',
       ADMIN_EMAILS: PROJECTS.map((name) => `admin-${name}@grindform.test`).join(','),
     },
   },
