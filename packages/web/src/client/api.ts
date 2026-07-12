@@ -20,6 +20,9 @@ import type {
   ThemeId,
   VolumeSummary,
   WeeklyPlan,
+  PlanSummary,
+  WeekAssignment,
+  WeekResolution,
 } from './types.ts';
 
 /** An error raised when the API responds with a non-2xx status. */
@@ -57,6 +60,35 @@ export const createPlan = (input: GeneratePlanRequest): Promise<{ plan: WeeklyPl
 /** Fetch a previously generated plan. */
 export const getPlan = (planId: string): Promise<{ plan: WeeklyPlan }> =>
   request(`/v1/plans/${planId}`);
+
+export const listPlans = (): Promise<{ plans: PlanSummary[] }> => request('/v1/plans');
+
+export const resolveWeek = (weekStart: string): Promise<WeekResolution> =>
+  request(`/v1/weeks/${weekStart}`);
+
+export const listWeekAssignments = (
+  from: string,
+  to: string,
+): Promise<{ assignments: WeekAssignment[] }> =>
+  request(`/v1/weeks?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+
+export const assignWeek = (
+  weekStart: string,
+  planId: string,
+): Promise<{ assignment: WeekAssignment }> =>
+  request(`/v1/weeks/${weekStart}`, {
+    method: 'PUT',
+    body: JSON.stringify({ planId }),
+  });
+
+export const unassignWeek = (weekStart: string): Promise<void> =>
+  request(`/v1/weeks/${weekStart}`, { method: 'DELETE' });
+
+export const setDefaultPlan = (planId: string): Promise<{ ok: boolean }> =>
+  request(`/v1/plans/${planId}/default`, { method: 'PUT' });
+
+export const clearDefaultPlan = (planId: string): Promise<void> =>
+  request(`/v1/plans/${planId}/default`, { method: 'DELETE' });
 
 /** Mark a whole exercise slot complete in one tap. */
 export const completeSlot = (

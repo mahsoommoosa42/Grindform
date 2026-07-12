@@ -10,12 +10,14 @@
 
 import {
   boolean,
+  date,
   doublePrecision,
   integer,
   jsonb,
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
 import type {
@@ -40,6 +42,7 @@ import type {
   UserId,
   VerificationTokenId,
   Weekday,
+  WeekStart,
 } from '@grindform/core';
 import type { PlanSession } from '@grindform/planner';
 
@@ -96,9 +99,29 @@ export const plans = pgTable('plans', {
   experience: text('experience').notNull().$type<Experience>(),
   variation: text('variation').notNull().$type<'A' | 'B'>(),
   timeBudget: jsonb('time_budget').notNull().$type<TimeBudget>(),
+  isDefault: boolean('is_default').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** A user's explicit plan assignment for a calendar week. */
+export const weekAssignments = pgTable(
+  'week_assignments',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull().$type<UserId>(),
+    planId: text('plan_id').notNull().$type<PlanId>(),
+    weekStart: date('week_start', { mode: 'string' }).notNull().$type<WeekStart>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    userWeekUnique: uniqueIndex('week_assignments_user_week_unique').on(
+      table.userId,
+      table.weekStart,
+    ),
+  }),
+);
 
 /** One day within a plan — an ordered list of training/external sessions. */
 export const planDays = pgTable('plan_days', {

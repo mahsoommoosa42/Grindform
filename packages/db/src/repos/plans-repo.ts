@@ -13,7 +13,7 @@ import type { DayId, Goal, Experience, PlanId, UserId } from '@grindform/core';
 import type { PlanDay, PlanSession, WeeklyPlan } from '@grindform/planner';
 
 import type { DbOrTx } from '../client.ts';
-import { planDays, plans } from '../schema/tables.ts';
+import { planDays, plans, weekAssignments } from '../schema/tables.ts';
 
 /** A lightweight plan listing entry (no days). */
 export interface PlanSummary {
@@ -21,6 +21,7 @@ export interface PlanSummary {
   readonly goal: Goal;
   readonly experience: Experience;
   readonly variation: 'A' | 'B';
+  readonly isDefault: boolean;
   readonly createdAt: Date;
 }
 
@@ -91,6 +92,7 @@ export const listPlanSummaries = async (
       goal: plans.goal,
       experience: plans.experience,
       variation: plans.variation,
+      isDefault: plans.isDefault,
       createdAt: plans.createdAt,
     })
     .from(plans)
@@ -115,11 +117,56 @@ export const planBelongsToUser = async (
 
 /** Delete a plan owned by `userId` (cascading to its days). Returns whether a row was removed. */
 export const deletePlan = async (db: DbOrTx, planId: PlanId, userId: UserId): Promise<boolean> => {
-  const deleted = await db
-    .delete(plans)
+  const deleted = await db.transaction(async (tx) => {
+    await tx.delete(weekAssignments).where(eq(weekAssignments.planId, planId));
+    return tx
+      .delete(plans)
+      .where(and(eq(plans.id, planId), eq(plans.userId, userId)))
+      .returning({ id: plans.id });
+  });
+  return deleted.length > 0;
+};
+
+/** Return the user's default plan, if one is configured. */
+export const getDefaultPlan = async (db: DbOrTx, userId: UserId): Promise<PlanId | undefined> => {
+  const [row] = await db
+    .select({ id: plans.id })
+    .from(plans)
+    .where(and(eq(plans.userId, userId), eq(plans.isDefault, true)))
+    .limit(1);
+  return row?.id;
+};
+
+/** Make an owned plan the user's default, clearing any previous default. */
+export const setDefaultPlan = async (
+  db: DbOrTx,
+  userId: UserId,
+  planId: PlanId,
+): Promise<boolean> => {
+  const owned = await planBelongsToUser(db, planId, userId);
+  if (!owned) return false;
+  await db.transaction(async (tx) => {
+    await tx.update(plans).set({ isDefault: false }).where(eq(plans.userId, userId));
+    await tx
+      .update(plans)
+      .set({ isDefault: true, updatedAt: new Date() })
+      .where(and(eq(plans.id, planId), eq(plans.userId, userId)));
+  });
+  return true;
+};
+
+/** Clear the default flag from an owned plan. */
+export const clearDefaultPlan = async (
+  db: DbOrTx,
+  userId: UserId,
+  planId: PlanId,
+): Promise<boolean> => {
+  const updated = await db
+    .update(plans)
+    .set({ isDefault: false, updatedAt: new Date() })
     .where(and(eq(plans.id, planId), eq(plans.userId, userId)))
     .returning({ id: plans.id });
-  return deleted.length > 0;
+  return updated.length > 0;
 };
 
 /** Every plan id belonging to a user (for export/erasure). */

@@ -28,22 +28,31 @@ import {
   isGrindformError,
   isPlanId,
   NotFoundError,
+  startOfIsoWeek,
+  WeekStartSchema,
   toErrorPayload,
   ValidationError,
 } from '@grindform/core';
-import type { PlanId, UserId } from '@grindform/core';
+import type { PlanId, UserId, WeekStart } from '@grindform/core';
 import {
   createCustomExercise,
   createPlan,
+  assignWeek,
+  clearDefaultPlan,
   deleteCustomExercise,
   deletePlan,
   getCustomExercise,
   getDayForUser,
   getPlan,
+  getDefaultPlan,
+  getWeekAssignment,
   getSettings,
   listCustomExercises,
   listPlanSummaries,
+  listWeekAssignments,
   planBelongsToUser,
+  setDefaultPlan,
+  unassignWeek,
   updateDaySessions,
   upsertSettings,
 } from '@grindform/db';
@@ -82,6 +91,8 @@ import {
   SettingsBodySchema,
   SlotIdParamSchema,
   SwapSlotBodySchema,
+  WeekAssignmentBodySchema,
+  WeekStartQuerySchema,
 } from './validation.ts';
 import type { ExerciseRef } from './validation.ts';
 
@@ -112,6 +123,16 @@ const PlanIdParamSchema = z
   .string()
   .refine(isPlanId, { message: 'invalid PlanId' })
   .transform((s): PlanId => s as PlanId);
+
+const parseWeekStart = (value: string): WeekStart =>
+  parseOrThrow(WeekStartSchema, value, 'week start');
+
+const weeksBetween = (from: string, to: string): number =>
+  Math.round(
+    (new Date(`${to}T00:00:00Z`).getTime() - new Date(`${from}T00:00:00Z`).getTime()) /
+      86_400_000 /
+      7,
+  );
 
 /** Find a day within a plan by id. */
 const findDay = (plan: WeeklyPlan, dayId: string): PlanDay | undefined =>
@@ -287,6 +308,12 @@ export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
     const generated = generatePlan(input);
     if (!generated.ok) throw generated.error;
     await createPlan(db, c.get('auth').userId, generated.value);
+    const userId = c.get('auth').userId;
+    const currentWeek = startOfIsoWeek(now());
+    await assignWeek(db, userId, currentWeek, generated.value.id);
+    if ((await getDefaultPlan(db, userId)) === undefined) {
+      await setDefaultPlan(db, userId, generated.value.id);
+    }
     return c.json({ plan: generated.value }, 201);
   });
 
@@ -303,6 +330,73 @@ export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
       throw new NotFoundError('plan not found', { planId });
     }
     return c.json({ plan });
+  });
+
+  app.put('/v1/plans/:planId/default', guard, async (c) => {
+    const planId = parseOrThrow(PlanIdParamSchema, c.req.param('planId'), 'plan id');
+    if (!(await setDefaultPlan(db, c.get('auth').userId, planId))) {
+      throw new NotFoundError('plan not found', { planId });
+    }
+    return c.json({ ok: true });
+  });
+
+  app.delete('/v1/plans/:planId/default', guard, async (c) => {
+    const planId = parseOrThrow(PlanIdParamSchema, c.req.param('planId'), 'plan id');
+    if (!(await clearDefaultPlan(db, c.get('auth').userId, planId))) {
+      throw new NotFoundError('plan not found', { planId });
+    }
+    return c.body(null, 204);
+  });
+
+  app.get('/v1/weeks', guard, async (c) => {
+    const query = parseOrThrow(
+      WeekStartQuerySchema,
+      { from: c.req.query('from'), to: c.req.query('to') },
+      'week range',
+    );
+    const count = weeksBetween(query.from, query.to);
+    if (count < 0 || count > 53) {
+      throw new ValidationError('week range must be between 0 and 53 weeks', {
+        from: query.from,
+        to: query.to,
+      });
+    }
+    const assignments = await listWeekAssignments(db, c.get('auth').userId, query.from, query.to);
+    return c.json({ assignments });
+  });
+
+  app.get('/v1/weeks/:weekStart', guard, async (c) => {
+    const weekStart = parseWeekStart(c.req.param('weekStart'));
+    const userId = c.get('auth').userId;
+    const assignment = await getWeekAssignment(db, userId, weekStart);
+    if (assignment !== undefined) {
+      const plan = await getPlan(db, assignment.planId);
+      if (plan !== undefined && (await planBelongsToUser(db, plan.id, userId))) {
+        return c.json({ weekStart, source: 'assigned', plan });
+      }
+    }
+    const defaultId = await getDefaultPlan(db, userId);
+    if (defaultId !== undefined) {
+      const plan = await getPlan(db, defaultId);
+      if (plan !== undefined) return c.json({ weekStart, source: 'default', plan });
+    }
+    return c.json({ weekStart, source: null, plan: null });
+  });
+
+  app.put('/v1/weeks/:weekStart', guard, async (c) => {
+    const weekStart = parseWeekStart(c.req.param('weekStart'));
+    const body = parseOrThrow(WeekAssignmentBodySchema, await c.req.json(), 'week assignment body');
+    if (!(await planBelongsToUser(db, body.planId, c.get('auth').userId))) {
+      throw new NotFoundError('plan not found', { planId: body.planId });
+    }
+    const assignment = await assignWeek(db, c.get('auth').userId, weekStart, body.planId);
+    return c.json({ assignment });
+  });
+
+  app.delete('/v1/weeks/:weekStart', guard, async (c) => {
+    const weekStart = parseWeekStart(c.req.param('weekStart'));
+    await unassignWeek(db, c.get('auth').userId, weekStart);
+    return c.body(null, 204);
   });
 
   app.delete('/v1/plans/:planId', guard, async (c) => {

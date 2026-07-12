@@ -7,15 +7,19 @@ import type { WeeklyPlan } from '@grindform/planner';
 import type { Db } from '../src/client.ts';
 import {
   createPlan,
+  clearDefaultPlan,
   dayBelongsToUser,
   deletePlan,
   getDayForUser,
   getPlan,
+  getDefaultPlan,
   listPlanIdsForUser,
   listPlanSummaries,
   planBelongsToUser,
+  setDefaultPlan,
   updateDaySessions,
 } from '../src/repos/plans-repo.ts';
+import { assignWeek, getWeekAssignment } from '../src/repos/weeks-repo.ts';
 import { freshDb } from './helpers/db.ts';
 
 const makePlan = (): WeeklyPlan => {
@@ -117,6 +121,28 @@ describe('plans-repo', () => {
     await createPlan(db, userId, plan);
     expect(await deletePlan(db, plan.id, userId)).toBe(true);
     expect(await getPlan(db, plan.id)).toBeUndefined();
+  });
+
+  it('manages one default plan per user and cleans assignments on delete', async () => {
+    const userId = newUserId();
+    const first = makePlan();
+    const second = makePlan();
+    await createPlan(db, userId, first);
+    await createPlan(db, userId, second);
+    expect(await setDefaultPlan(db, userId, newPlanId())).toBe(false);
+    expect(await setDefaultPlan(db, userId, first.id)).toBe(true);
+    expect(await getDefaultPlan(db, userId)).toBe(first.id);
+    expect(await setDefaultPlan(db, userId, second.id)).toBe(true);
+    expect(await getDefaultPlan(db, userId)).toBe(second.id);
+    expect((await listPlanSummaries(db, userId)).find((p) => p.id === second.id)?.isDefault).toBe(
+      true,
+    );
+    expect(await clearDefaultPlan(db, userId, second.id)).toBe(true);
+    expect(await clearDefaultPlan(db, userId, newPlanId())).toBe(false);
+    expect(await getDefaultPlan(db, userId)).toBeUndefined();
+    await assignWeek(db, userId, '2026-07-06', first.id);
+    expect(await deletePlan(db, first.id, userId)).toBe(true);
+    expect(await getWeekAssignment(db, userId, '2026-07-06')).toBeUndefined();
   });
 
   it('deletePlan returns false when nothing matched or the plan is another user’s', async () => {

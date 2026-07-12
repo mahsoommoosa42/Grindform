@@ -24,6 +24,7 @@ import {
   profileForGoal,
 } from '@grindform/loadcalc';
 import type { LoadGoal, Prescription } from '@grindform/loadcalc';
+import { startOfIsoWeek } from '@grindform/core';
 
 import * as api from './api.ts';
 import { ApiError } from './api.ts';
@@ -53,6 +54,8 @@ import type {
   VolumeSummary,
   WeeklyPlan,
   Weekday,
+  PlanSummary,
+  WeekAssignment,
 } from './types.ts';
 
 /** Display labels for external activities. */
@@ -91,6 +94,9 @@ const svgBase = (paths: SVGTemplateResult): SVGTemplateResult => svg`
 const ICON_BUILD = svgBase(svg`<path d="M4 9v6M7 6v12M17 6v12M20 9v6M7 12h10" />`);
 const ICON_WEEK = svgBase(
   svg`<rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" />`,
+);
+const ICON_CALENDAR = svgBase(
+  svg`<rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01" />`,
 );
 const ICON_CALC = svgBase(
   svg`<rect x="5" y="2" width="14" height="20" rx="2" /><path d="M8 6h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 19h4" />`,
@@ -143,6 +149,25 @@ const WEEKDAYS: readonly { id: Weekday; label: string }[] = [
   { id: 'sat', label: 'Saturday' },
   { id: 'sun', label: 'Sunday' },
 ];
+
+const weekDate = (weekStart: string, offset: number): Date => {
+  const date = new Date(`${weekStart}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + offset);
+  return date;
+};
+
+const formatWeekRange = (weekStart: string): string => {
+  const monday = weekDate(weekStart, 0);
+  const sunday = weekDate(weekStart, 6);
+  const month = new Intl.DateTimeFormat(undefined, { month: 'short', timeZone: 'UTC' });
+  const day = new Intl.DateTimeFormat(undefined, { day: 'numeric', timeZone: 'UTC' });
+  return `Mon ${day.format(monday)} – Sun ${day.format(sunday)} ${month.format(sunday)}`;
+};
+
+const shiftWeek = (weekStart: string, amount: number): string => {
+  const date = weekDate(weekStart, amount * 7);
+  return startOfIsoWeek(date);
+};
 
 const ACTIVITIES: readonly ExternalActivity[] = [
   'run',
@@ -405,6 +430,12 @@ export class GfApp extends LitElement {
     adminError: { state: true },
     theme: { state: true },
     view: { state: true },
+    weekStart: { state: true },
+    weekSource: { state: true },
+    calendarWeeks: { state: true },
+    calendarAssignments: { state: true },
+    calendarPlans: { state: true },
+    calendarBusy: { state: true },
     goal: { state: true },
     experience: { state: true },
     equipment: { state: true },
@@ -459,7 +490,13 @@ export class GfApp extends LitElement {
   declare adminDetail: { user: PublicUser; audit: AuditRow[] } | null;
   declare adminError: string | null;
   declare theme: ThemeId;
-  declare view: 'generate' | 'week' | 'admin' | 'calculator' | 'exercises';
+  declare view: 'generate' | 'week' | 'calendar' | 'admin' | 'calculator' | 'exercises';
+  declare weekStart: string;
+  declare weekSource: 'assigned' | 'default' | null;
+  declare calendarWeeks: string[];
+  declare calendarAssignments: WeekAssignment[];
+  declare calendarPlans: PlanSummary[];
+  declare calendarBusy: boolean;
   declare goal: Goal;
   declare experience: Experience;
   declare equipment: Equipment[];
@@ -530,6 +567,12 @@ export class GfApp extends LitElement {
     this.adminError = null;
     this.theme = readInitialTheme();
     this.view = 'generate';
+    this.weekStart = startOfIsoWeek(new Date());
+    this.weekSource = null;
+    this.calendarWeeks = [];
+    this.calendarAssignments = [];
+    this.calendarPlans = [];
+    this.calendarBusy = false;
     this.goal = 'build_muscle';
     this.experience = 'intermediate';
     this.equipment = [...EQUIPMENT];
@@ -643,6 +686,96 @@ export class GfApp extends LitElement {
     this.authStatus = 'ready';
     void this.syncSettings();
     void this.loadExercises();
+    void this.loadResolvedWeek(this.weekStart);
+  }
+
+  private async loadResolvedWeek(weekStart: string): Promise<void> {
+    this.weekStart = weekStart;
+    try {
+      const resolved = await api.resolveWeek(weekStart);
+      this.weekSource = resolved.source;
+      this.plan = resolved.plan;
+      if (this.plan !== null) {
+        this.view = 'week';
+        this.progress = {};
+        this.dayVolume = {};
+        this.weekVolume = null;
+        void this.refreshWeekVolume();
+      } else if (this.view === 'week') {
+        this.view = 'generate';
+      }
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not load this week.';
+    }
+  }
+
+  private async openCalendar(): Promise<void> {
+    this.view = 'calendar';
+    this.calendarBusy = true;
+    try {
+      const center = startOfIsoWeek(new Date());
+      const from = shiftWeek(center, -6);
+      const to = shiftWeek(center, 6);
+      const [{ assignments }, { plans }] = await Promise.all([
+        api.listWeekAssignments(from, to),
+        api.listPlans(),
+      ]);
+      this.calendarWeeks = Array.from({ length: 13 }, (_, i) => shiftWeek(from, i));
+      this.calendarAssignments = assignments;
+      this.calendarPlans = plans;
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not load calendar.';
+    } finally {
+      this.calendarBusy = false;
+    }
+  }
+
+  private async assignCalendarWeek(weekStart: string, planId: string): Promise<void> {
+    this.calendarBusy = true;
+    try {
+      await api.assignWeek(weekStart, planId);
+      await this.openCalendar();
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not tag this week.';
+    } finally {
+      this.calendarBusy = false;
+    }
+  }
+
+  private async unassignCalendarWeek(weekStart: string): Promise<void> {
+    this.calendarBusy = true;
+    try {
+      await api.unassignWeek(weekStart);
+      await this.openCalendar();
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not untag this week.';
+    } finally {
+      this.calendarBusy = false;
+    }
+  }
+
+  private async makeDefault(planId: string): Promise<void> {
+    this.calendarBusy = true;
+    try {
+      await api.setDefaultPlan(planId);
+      await this.openCalendar();
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not set the default plan.';
+    } finally {
+      this.calendarBusy = false;
+    }
+  }
+
+  private async clearDefault(planId: string): Promise<void> {
+    this.calendarBusy = true;
+    try {
+      await api.clearDefaultPlan(planId);
+      await this.openCalendar();
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not clear the default plan.';
+    } finally {
+      this.calendarBusy = false;
+    }
   }
 
   /** Load the catalog (once) + the account's custom exercises. */
@@ -724,6 +857,7 @@ export class GfApp extends LitElement {
   private resetToAuth(): void {
     this.user = null;
     this.plan = null;
+    this.weekSource = null;
     this.resetHistory();
     this.progress = {};
     this.dayVolume = {};
@@ -952,6 +1086,8 @@ export class GfApp extends LitElement {
         seed: Math.floor(Math.random() * 0x7fffffff),
       });
       this.plan = plan;
+      this.weekStart = startOfIsoWeek(new Date());
+      this.weekSource = 'assigned';
       this.resetHistory();
       this.progress = {};
       this.dayVolume = {};
@@ -1437,6 +1573,7 @@ export class GfApp extends LitElement {
   private renderMain(): TemplateResult {
     if (this.view === 'admin') return this.renderAdmin();
     if (this.view === 'week') return this.renderWeek();
+    if (this.view === 'calendar') return this.renderCalendar();
     if (this.view === 'calculator') return this.renderCalculator();
     if (this.view === 'exercises') return this.renderExercises();
     return this.renderGenerator();
@@ -1743,6 +1880,14 @@ export class GfApp extends LitElement {
         >
           <span class="tab-icon" aria-hidden="true">${ICON_WEEK}</span>
           <span class="tab-label">My week</span>
+        </button>
+        <button
+          class=${this.view === 'calendar' ? 'tab active' : 'tab'}
+          data-testid="nav-calendar"
+          @click=${() => void this.openCalendar()}
+        >
+          <span class="tab-icon" aria-hidden="true">${ICON_CALENDAR}</span>
+          <span class="tab-label">Calendar</span>
         </button>
         <button
           class=${this.view === 'exercises' ? 'tab active' : 'tab'}
@@ -2269,13 +2414,129 @@ export class GfApp extends LitElement {
     return html`
       <section class="panel" data-testid="week">
         <div class="week-head">
-          <h1>${titleCase(plan.goal)} · Week ${plan.variation}</h1>
-          <button class="ghost" data-testid="rebuild" @click=${() => void this.onGenerate()}>
-            Boredom swap ↻
-          </button>
+          <div>
+            <h1>${titleCase(plan.goal)} · Week ${plan.variation}</h1>
+            <p class="week-range" data-testid="week-range">${formatWeekRange(this.weekStart)}</p>
+            <span
+              class="pill ${this.weekSource === 'assigned' ? 'ok' : 'off'}"
+              data-testid="week-source"
+            >
+              ${this.weekSource === 'assigned' ? 'Tagged to this week' : 'Default plan'}
+            </span>
+          </div>
+          <div class="week-actions">
+            <button
+              class="ghost"
+              data-testid="previous-week"
+              @click=${() => void this.loadResolvedWeek(shiftWeek(this.weekStart, -1))}
+            >
+              ←
+            </button>
+            <button
+              class="ghost"
+              data-testid="next-week"
+              @click=${() => void this.loadResolvedWeek(shiftWeek(this.weekStart, 1))}
+            >
+              →
+            </button>
+            <button class="ghost" data-testid="rebuild" @click=${() => void this.onGenerate()}>
+              Boredom swap ↻
+            </button>
+          </div>
         </div>
         <div class="week-grid">${plan.days.map((d) => this.renderDayCard(d))}</div>
         ${this.renderVolumeCard('Week volume', this.weekVolume, 'week-volume')}
+      </section>
+    `;
+  }
+
+  private renderCalendar(): TemplateResult {
+    const defaultPlan = this.calendarPlans.find((p) => p.isDefault);
+    const assignmentFor = (week: string): WeekAssignment | undefined =>
+      this.calendarAssignments.find((a) => a.weekStart === week);
+    return html`
+      <section class="panel" data-testid="calendar">
+        <div class="week-head">
+          <div>
+            <h1>Calendar</h1>
+            <p class="lede">Tag a plan to a week, or let your default plan carry forward.</p>
+          </div>
+        </div>
+        ${this.calendarBusy ? html`<p>Loading calendar…</p>` : nothing}
+        <div class="calendar-list">
+          ${this.calendarWeeks.map((week) => {
+            const assignment = assignmentFor(week);
+            const plan =
+              assignment === undefined
+                ? defaultPlan
+                : this.calendarPlans.find((p) => p.id === assignment.planId);
+            const source =
+              assignment === undefined
+                ? defaultPlan === undefined
+                  ? 'none'
+                  : 'default'
+                : 'assigned';
+            return html`
+              <article class="calendar-row" data-testid=${`calendar-week-${week}`}>
+                <div>
+                  <strong>${formatWeekRange(week)}</strong>
+                  <p class="muted">
+                    ${plan === undefined
+                      ? 'No plan'
+                      : `${titleCase(plan.goal)} · Week ${plan.variation}`}
+                    ${source === 'assigned'
+                      ? ' · tagged'
+                      : source === 'default'
+                        ? ' · default'
+                        : ''}
+                  </p>
+                </div>
+                <div class="calendar-controls">
+                  <select
+                    data-testid=${`calendar-select-${week}`}
+                    .value=${assignment?.planId ?? ''}
+                    @change=${(e: Event) => {
+                      const id = (e.target as HTMLSelectElement).value;
+                      if (id !== '') void this.assignCalendarWeek(week, id);
+                    }}
+                  >
+                    <option value="">Tag a plan…</option>
+                    ${this.calendarPlans.map(
+                      (p) =>
+                        html`<option value=${p.id}>${titleCase(p.goal)} · ${p.variation}</option>`,
+                    )}
+                  </select>
+                  ${assignment !== undefined
+                    ? html`<button
+                        class="link"
+                        data-testid=${`calendar-untag-${week}`}
+                        @click=${() => void this.unassignCalendarWeek(week)}
+                      >
+                        Untag
+                      </button>`
+                    : nothing}
+                </div>
+              </article>
+            `;
+          })}
+        </div>
+        <div class="calendar-plans">
+          <h2>Your plans</h2>
+          ${this.calendarPlans.map(
+            (plan) => html`
+              <div class="calendar-plan" data-testid=${`calendar-plan-${plan.id}`}>
+                <span>${titleCase(plan.goal)} · Week ${plan.variation}</span>
+                ${plan.isDefault
+                  ? html`<button class="link" @click=${() => void this.clearDefault(plan.id)}>
+                      Clear default
+                    </button>`
+                  : html`<button class="link" @click=${() => void this.makeDefault(plan.id)}>
+                      Set as default
+                    </button>`}
+              </div>
+            `,
+          )}
+        </div>
       </section>
     `;
   }
@@ -3414,6 +3675,19 @@ export class GfApp extends LitElement {
         grid-template-columns: 2.25rem minmax(0, 1fr) auto minmax(0, 1fr) 4rem;
         gap: 6px;
       }
+      .week-head,
+      .calendar-row,
+      .calendar-plan {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .week-actions,
+      .calendar-controls {
+        justify-content: flex-start;
+      }
+      .calendar-controls select {
+        width: 100%;
+      }
     }
     .calc-headline,
     .calc-prescription {
@@ -3511,6 +3785,47 @@ export class GfApp extends LitElement {
       justify-content: space-between;
       margin-bottom: 14px;
       gap: 10px;
+    }
+    .week-range {
+      margin: 4px 0 8px;
+      color: var(--gf-muted);
+    }
+    .week-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .calendar-list,
+    .calendar-plans {
+      display: grid;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .calendar-row,
+    .calendar-plan {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px;
+      border: 1px solid var(--gf-border);
+      border-radius: var(--gf-radius);
+      background: var(--gf-surface-2, var(--gf-surface));
+    }
+    .calendar-row p {
+      margin: 4px 0 0;
+    }
+    .calendar-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .calendar-controls select {
+      min-width: 170px;
     }
     .week-grid {
       display: grid;

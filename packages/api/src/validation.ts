@@ -20,6 +20,7 @@ import {
   GoalSchema,
   isCustomExerciseId,
   isDayId,
+  isPlanId,
   isPlanSessionId,
   isSlotId,
   MovementPatternSchema,
@@ -27,8 +28,9 @@ import {
   RepSchemeSchema,
   ThemeIdSchema,
   ValidationError,
+  WeekStartSchema,
 } from '@grindform/core';
-import type { CustomExerciseId, DayId, PlanSessionId, SlotId } from '@grindform/core';
+import type { CustomExerciseId, DayId, PlanId, PlanSessionId, SlotId } from '@grindform/core';
 
 /** Parse `data` with `schema`, throwing a 400-mapped error on failure. */
 export const parseOrThrow = <S extends z.ZodTypeAny>(
@@ -181,6 +183,18 @@ export const LogSetBodySchema = z.object({
   reps: z.number().int().min(1).max(100),
   loadKg: z.number().nonnegative().max(1000),
   rpe: z.number().min(1).max(10).optional(),
+});
+
+export const WeekAssignmentBodySchema = z.object({
+  planId: z
+    .string()
+    .refine(isPlanId, { message: 'invalid PlanId' })
+    .transform((s): PlanId => s as PlanId),
+});
+
+export const WeekStartQuerySchema = z.object({
+  from: WeekStartSchema,
+  to: WeekStartSchema,
 });
 
 /** Max number of top-level keys and serialised bytes allowed in `preferences`. */
