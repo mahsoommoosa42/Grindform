@@ -58,6 +58,11 @@ import type {
   WeekAssignment,
 } from './types.ts';
 
+type CalendarMenuItem =
+  | { readonly kind: 'plan'; readonly id: string; readonly label: string }
+  | { readonly kind: 'untag'; readonly id: 'untag'; readonly label: string }
+  | { readonly kind: 'empty'; readonly id: 'empty'; readonly label: string };
+
 /** Display labels for external activities. */
 const ACTIVITY_LABELS: Record<ExternalActivity, string> = {
   run: 'Run',
@@ -436,6 +441,8 @@ export class GfApp extends LitElement {
     calendarAssignments: { state: true },
     calendarPlans: { state: true },
     calendarBusy: { state: true },
+    calendarMenuWeek: { state: true },
+    calendarMenuIndex: { state: true },
     goal: { state: true },
     experience: { state: true },
     equipment: { state: true },
@@ -497,6 +504,8 @@ export class GfApp extends LitElement {
   declare calendarAssignments: WeekAssignment[];
   declare calendarPlans: PlanSummary[];
   declare calendarBusy: boolean;
+  declare calendarMenuWeek: string | null;
+  declare calendarMenuIndex: number;
   declare goal: Goal;
   declare experience: Experience;
   declare equipment: Equipment[];
@@ -573,6 +582,8 @@ export class GfApp extends LitElement {
     this.calendarAssignments = [];
     this.calendarPlans = [];
     this.calendarBusy = false;
+    this.calendarMenuWeek = null;
+    this.calendarMenuIndex = 0;
     this.goal = 'build_muscle';
     this.experience = 'intermediate';
     this.equipment = [...EQUIPMENT];
@@ -618,8 +629,21 @@ export class GfApp extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    document.addEventListener('click', this.onCalendarDocumentClick);
     void this.bootstrap();
   }
+
+  override disconnectedCallback(): void {
+    document.removeEventListener('click', this.onCalendarDocumentClick);
+    super.disconnectedCallback();
+  }
+
+  private readonly onCalendarDocumentClick = (event: MouseEvent): void => {
+    const insideCalendarDropdown = event
+      .composedPath()
+      .some((node) => node instanceof Element && node.hasAttribute('data-calendar-dropdown'));
+    if (!insideCalendarDropdown) this.closeCalendarMenu();
+  };
 
   /** Resolve the current session, then gate the app on whether we're signed in. */
   private async bootstrap(): Promise<void> {
@@ -743,6 +767,7 @@ export class GfApp extends LitElement {
   }
 
   private async unassignCalendarWeek(weekStart: string): Promise<void> {
+    this.closeCalendarMenu();
     this.calendarBusy = true;
     try {
       await api.unassignWeek(weekStart);
@@ -775,6 +800,105 @@ export class GfApp extends LitElement {
       this.error = err instanceof ApiError ? err.message : 'Could not clear the default plan.';
     } finally {
       this.calendarBusy = false;
+    }
+  }
+
+  private closeCalendarMenu(): void {
+    this.calendarMenuWeek = null;
+    this.calendarMenuIndex = 0;
+  }
+
+  private calendarMenuItems(assignment: WeekAssignment | undefined): CalendarMenuItem[] {
+    const plans: CalendarMenuItem[] = this.calendarPlans.map((plan) => ({
+      kind: 'plan',
+      id: plan.id,
+      label: `${titleCase(plan.goal)} · Week ${plan.variation}`,
+    }));
+    if (plans.length === 0) {
+      return [{ kind: 'empty', id: 'empty', label: 'Generate a plan first' }];
+    }
+    return assignment === undefined
+      ? plans
+      : [{ kind: 'untag', id: 'untag', label: 'Untag this week' }, ...plans];
+  }
+
+  private focusCalendarMenuItem(weekStart: string, index: number): void {
+    void this.updateComplete.then(() => {
+      const item = this.renderRoot.querySelector<HTMLElement>(
+        `[data-calendar-menu-item="${weekStart}"][data-calendar-menu-index="${index}"]`,
+      );
+      item?.focus();
+    });
+  }
+
+  private openCalendarMenu(weekStart: string, assignment: WeekAssignment | undefined): void {
+    const items = this.calendarMenuItems(assignment);
+    const selected =
+      assignment === undefined
+        ? 0
+        : items.findIndex((item) => item.kind === 'plan' && item.id === assignment.planId);
+    this.calendarMenuWeek = weekStart;
+    this.calendarMenuIndex = selected >= 0 ? selected : 0;
+    this.focusCalendarMenuItem(weekStart, this.calendarMenuIndex);
+  }
+
+  private selectCalendarMenuItem(weekStart: string, item: CalendarMenuItem): void {
+    if (item.kind === 'empty') return;
+    this.closeCalendarMenu();
+    if (item.kind === 'untag') {
+      void this.unassignCalendarWeek(weekStart);
+    } else {
+      void this.assignCalendarWeek(weekStart, item.id);
+    }
+  }
+
+  private onCalendarTriggerKeydown(
+    event: KeyboardEvent,
+    weekStart: string,
+    assignment: WeekAssignment | undefined,
+  ): void {
+    if (event.key === 'Escape' && this.calendarMenuWeek === weekStart) {
+      event.preventDefault();
+      this.closeCalendarMenu();
+      return;
+    }
+    if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'ArrowDown') return;
+    event.preventDefault();
+    if (this.calendarMenuWeek === weekStart) {
+      this.closeCalendarMenu();
+    } else {
+      this.openCalendarMenu(weekStart, assignment);
+    }
+  }
+
+  private onCalendarMenuKeydown(
+    event: KeyboardEvent,
+    weekStart: string,
+    assignment: WeekAssignment | undefined,
+  ): void {
+    const items = this.calendarMenuItems(assignment);
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.closeCalendarMenu();
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const delta = event.key === 'ArrowDown' ? 1 : -1;
+      this.calendarMenuIndex = (this.calendarMenuIndex + delta + items.length) % items.length;
+      this.focusCalendarMenuItem(weekStart, this.calendarMenuIndex);
+      return;
+    }
+    if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      this.calendarMenuIndex = event.key === 'Home' ? 0 : items.length - 1;
+      this.focusCalendarMenuItem(weekStart, this.calendarMenuIndex);
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      const item = items[this.calendarMenuIndex];
+      if (item !== undefined) this.selectCalendarMenuItem(weekStart, item);
     }
   }
 
@@ -2470,6 +2594,11 @@ export class GfApp extends LitElement {
               assignment === undefined
                 ? defaultPlan
                 : this.calendarPlans.find((p) => p.id === assignment.planId);
+            const taggedPlan =
+              assignment === undefined
+                ? undefined
+                : this.calendarPlans.find((p) => p.id === assignment.planId);
+            const menuItems = this.calendarMenuItems(assignment);
             const source =
               assignment === undefined
                 ? defaultPlan === undefined
@@ -2492,29 +2621,67 @@ export class GfApp extends LitElement {
                   </p>
                 </div>
                 <div class="calendar-controls">
-                  <select
-                    data-testid=${`calendar-select-${week}`}
-                    .value=${assignment?.planId ?? ''}
-                    @change=${(e: Event) => {
-                      const id = (e.target as HTMLSelectElement).value;
-                      if (id !== '') void this.assignCalendarWeek(week, id);
-                    }}
-                  >
-                    <option value="">Tag a plan…</option>
-                    ${this.calendarPlans.map(
-                      (p) =>
-                        html`<option value=${p.id}>${titleCase(p.goal)} · ${p.variation}</option>`,
-                    )}
-                  </select>
-                  ${assignment !== undefined
-                    ? html`<button
-                        class="link"
-                        data-testid=${`calendar-untag-${week}`}
-                        @click=${() => void this.unassignCalendarWeek(week)}
-                      >
-                        Untag
-                      </button>`
-                    : nothing}
+                  <div class="calendar-dropdown" data-calendar-dropdown>
+                    <button
+                      class="calendar-dropdown-trigger ghost"
+                      data-testid=${`calendar-dropdown-trigger-${week}`}
+                      aria-haspopup="listbox"
+                      aria-expanded=${this.calendarMenuWeek === week}
+                      aria-controls=${`calendar-dropdown-menu-${week}`}
+                      @click=${() => {
+                        if (this.calendarMenuWeek === week) {
+                          this.closeCalendarMenu();
+                        } else {
+                          this.openCalendarMenu(week, assignment);
+                        }
+                      }}
+                      @keydown=${(event: KeyboardEvent) =>
+                        this.onCalendarTriggerKeydown(event, week, assignment)}
+                    >
+                      ${taggedPlan === undefined
+                        ? 'Tag a plan…'
+                        : `${titleCase(taggedPlan.goal)} · Week ${taggedPlan.variation}`}
+                      <span class="calendar-dropdown-chevron" aria-hidden="true">⌄</span>
+                    </button>
+                    ${this.calendarMenuWeek === week
+                      ? html`<div
+                          class="calendar-dropdown-menu"
+                          id=${`calendar-dropdown-menu-${week}`}
+                          data-testid=${`calendar-dropdown-menu-${week}`}
+                          role="listbox"
+                          aria-label=${`Plans for ${formatWeekRange(week)}`}
+                          @keydown=${(event: KeyboardEvent) =>
+                            this.onCalendarMenuKeydown(event, week, assignment)}
+                        >
+                          ${menuItems.map(
+                            (item, index) => html`
+                              <button
+                                class="calendar-dropdown-item"
+                                data-calendar-menu-item=${week}
+                                data-calendar-menu-index=${index}
+                                data-testid=${`calendar-dropdown-item-${week}-${item.id}`}
+                                role="option"
+                                aria-selected=${item.kind === 'plan' &&
+                                item.id === assignment?.planId}
+                                ?disabled=${item.kind === 'empty'}
+                                tabindex=${index === this.calendarMenuIndex ? 0 : -1}
+                                @focus=${() => {
+                                  this.calendarMenuIndex = index;
+                                }}
+                                @click=${() => this.selectCalendarMenuItem(week, item)}
+                              >
+                                <span>${item.label}</span>
+                                ${item.kind === 'plan' && item.id === assignment?.planId
+                                  ? html`<span class="calendar-dropdown-check" aria-hidden="true">
+                                      ✓
+                                    </span>`
+                                  : nothing}
+                              </button>
+                            `,
+                          )}
+                        </div>`
+                      : nothing}
+                  </div>
                 </div>
               </article>
             `;
@@ -3685,8 +3852,16 @@ export class GfApp extends LitElement {
       .calendar-controls {
         justify-content: flex-start;
       }
-      .calendar-controls select {
+      .calendar-dropdown {
         width: 100%;
+      }
+      .calendar-dropdown-trigger {
+        width: 100%;
+        justify-content: space-between;
+      }
+      .calendar-dropdown-menu {
+        left: 0;
+        right: auto;
       }
     }
     .calc-headline,
@@ -3824,8 +3999,77 @@ export class GfApp extends LitElement {
       flex-wrap: wrap;
       justify-content: flex-end;
     }
-    .calendar-controls select {
-      min-width: 170px;
+    .calendar-dropdown {
+      position: relative;
+      min-width: 220px;
+    }
+    .calendar-dropdown-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      max-width: min(300px, calc(100vw - 48px));
+      overflow: hidden;
+      text-align: left;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .calendar-dropdown-chevron {
+      flex: 0 0 auto;
+      color: var(--gf-muted);
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+    .calendar-dropdown-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      width: min(300px, calc(100vw - 32px));
+      max-height: min(320px, 50vh);
+      overflow-y: auto;
+      padding: 6px;
+      background: var(--gf-surface);
+      border: 1px solid var(--gf-border);
+      border-radius: var(--gf-radius-sm);
+      box-shadow: var(--gf-shadow);
+    }
+    .calendar-dropdown-item {
+      appearance: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      width: 100%;
+      min-height: 44px;
+      padding: 10px;
+      border: none;
+      border-radius: var(--gf-radius-sm);
+      background: transparent;
+      color: var(--gf-text);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .calendar-dropdown-item:hover,
+    .calendar-dropdown-item:focus-visible,
+    .calendar-dropdown-item[aria-selected='true'] {
+      background: var(--gf-hover);
+    }
+    .calendar-dropdown-item:focus-visible {
+      outline: 2px solid var(--gf-accent);
+      outline-offset: -2px;
+    }
+    .calendar-dropdown-item:disabled {
+      color: var(--gf-muted);
+      cursor: default;
+    }
+    .calendar-dropdown-check {
+      flex: 0 0 auto;
+      color: var(--gf-accent);
+      font-weight: 700;
     }
     .week-grid {
       display: grid;
