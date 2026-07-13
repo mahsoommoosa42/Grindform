@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Hono } from 'hono';
 
+import { startOfIsoWeek } from '@grindform/core';
 import type { AppEnv } from '../src/context.ts';
 import { freshApp, registerClient } from './helpers/db.ts';
 import type { Client } from './helpers/db.ts';
@@ -773,5 +774,61 @@ describe('Restore day sessions (undo/redo)', () => {
       { sessions: [] },
     );
     expect(res.status).toBe(404);
+  });
+});
+
+describe('Calendar weeks and default plans', () => {
+  let app: Hono<AppEnv>;
+  let client: Client;
+  let dispose: () => Promise<void>;
+
+  beforeEach(async () => {
+    ({ app, dispose } = await freshApp());
+    client = await registerClient(app);
+  });
+  afterEach(async () => {
+    await dispose();
+  });
+
+  it('requires authentication and validates Monday week starts', async () => {
+    expect((await app.request('/v1/weeks/2026-07-06')).status).toBe(401);
+    expect((await client.request('/v1/weeks/2026-07-07')).status).toBe(400);
+    expect((await client.request('/v1/weeks?from=2026-01-05&to=2027-01-18')).status).toBe(400);
+  });
+
+  it('auto-tags generated plans, resolves defaults, and upserts assignments', async () => {
+    const plan = await makePlan(client);
+    const current = startOfIsoWeek(new Date());
+    const resolved = await client.request(`/v1/weeks/${current}`);
+    expect(resolved.status).toBe(200);
+    expect((await resolved.json()).source).toBe('assigned');
+
+    const next = '2026-07-13';
+    expect((await client.json(`/v1/weeks/${next}`, 'PUT', { planId: plan.id })).status).toBe(200);
+    const replacement = await makePlan(client);
+    expect((await client.json(`/v1/weeks/${next}`, 'PUT', { planId: replacement.id })).status).toBe(
+      200,
+    );
+    const replaced = await client.request(`/v1/weeks/${next}`);
+    expect((await replaced.json()).plan.id).toBe(replacement.id);
+
+    expect((await client.json(`/v1/plans/${replacement.id}/default`, 'PUT', {})).status).toBe(200);
+    const following = await client.request('/v1/weeks/2026-07-20');
+    expect((await following.json()).source).toBe('default');
+    expect((await client.request('/v1/weeks?from=2026-07-06&to=2026-07-20')).status).toBe(200);
+    expect((await client.json(`/v1/weeks/${next}`, 'DELETE', {})).status).toBe(204);
+    expect((await client.json(`/v1/plans/${replacement.id}/default`, 'DELETE', {})).status).toBe(
+      204,
+    );
+    const emptyWeek = await client.request('/v1/weeks/2026-07-20');
+    expect(await emptyWeek.json()).toMatchObject({ source: null, plan: null });
+  });
+
+  it('protects assignment and default operations from other users', async () => {
+    const plan = await makePlan(client);
+    const other = await registerClient(app, 'calendar-other@example.com');
+    expect((await other.json('/v1/weeks/2026-07-06', 'PUT', { planId: plan.id })).status).toBe(404);
+    expect((await other.json(`/v1/plans/${plan.id}/default`, 'PUT', {})).status).toBe(404);
+    expect((await other.json(`/v1/plans/${plan.id}/default`, 'DELETE', {})).status).toBe(404);
   });
 });

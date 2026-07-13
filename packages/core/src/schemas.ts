@@ -24,6 +24,27 @@ export const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as con
 export const WeekdaySchema = z.enum(WEEKDAYS);
 export type Weekday = z.infer<typeof WeekdaySchema>;
 
+/** Return whether a YYYY-MM-DD string is a valid UTC Monday. */
+export const isIsoWeekStart = (value: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) return false;
+  return date.getUTCDay() === 1;
+};
+
+/** A calendar week start, always represented by the Monday YYYY-MM-DD. */
+export const WeekStartSchema = z.string().refine(isIsoWeekStart, {
+  message: 'week_start must be a Monday in YYYY-MM-DD format',
+});
+export type WeekStart = z.infer<typeof WeekStartSchema>;
+
+/** Return the UTC Monday that contains `date`, formatted as YYYY-MM-DD. */
+export const startOfIsoWeek = (date: Date): WeekStart => {
+  const day = date.getUTCDay();
+  const monday = new Date(date.getTime() - ((day + 6) % 7) * 86_400_000);
+  return monday.toISOString().slice(0, 10) as WeekStart;
+};
+
 // ---------------------------------------------------------------------------
 // Training vocabulary.
 // ---------------------------------------------------------------------------

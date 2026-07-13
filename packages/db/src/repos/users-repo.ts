@@ -25,6 +25,7 @@ import {
   setLogs,
   settings,
   users,
+  weekAssignments,
 } from '../schema/tables.ts';
 
 /** A `users` row as stored/returned. The password hash never leaves the repo layer casually. */
@@ -187,6 +188,7 @@ export const deleteUserAndData = async (db: DbOrTx, id: UserId): Promise<boolean
       }
       await tx.delete(plans).where(eq(plans.userId, id));
     }
+    await tx.delete(weekAssignments).where(eq(weekAssignments.userId, id));
     await tx.delete(customExercises).where(eq(customExercises.userId, id));
     await tx.delete(settings).where(eq(settings.userId, id));
     await tx.delete(sessions).where(eq(sessions.userId, id));

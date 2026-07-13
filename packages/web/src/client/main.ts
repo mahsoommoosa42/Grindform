@@ -24,6 +24,7 @@ import {
   profileForGoal,
 } from '@grindform/loadcalc';
 import type { LoadGoal, Prescription } from '@grindform/loadcalc';
+import { startOfIsoWeek } from '@grindform/core';
 
 import * as api from './api.ts';
 import { ApiError } from './api.ts';
@@ -53,7 +54,14 @@ import type {
   VolumeSummary,
   WeeklyPlan,
   Weekday,
+  PlanSummary,
+  WeekAssignment,
 } from './types.ts';
+
+type CalendarMenuItem =
+  | { readonly kind: 'plan'; readonly id: string; readonly label: string }
+  | { readonly kind: 'untag'; readonly id: 'untag'; readonly label: string }
+  | { readonly kind: 'empty'; readonly id: 'empty'; readonly label: string };
 
 /** Display labels for external activities. */
 const ACTIVITY_LABELS: Record<ExternalActivity, string> = {
@@ -91,6 +99,9 @@ const svgBase = (paths: SVGTemplateResult): SVGTemplateResult => svg`
 const ICON_BUILD = svgBase(svg`<path d="M4 9v6M7 6v12M17 6v12M20 9v6M7 12h10" />`);
 const ICON_WEEK = svgBase(
   svg`<rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" />`,
+);
+const ICON_CALENDAR = svgBase(
+  svg`<rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01" />`,
 );
 const ICON_CALC = svgBase(
   svg`<rect x="5" y="2" width="14" height="20" rx="2" /><path d="M8 6h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 19h4" />`,
@@ -143,6 +154,25 @@ const WEEKDAYS: readonly { id: Weekday; label: string }[] = [
   { id: 'sat', label: 'Saturday' },
   { id: 'sun', label: 'Sunday' },
 ];
+
+const weekDate = (weekStart: string, offset: number): Date => {
+  const date = new Date(`${weekStart}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + offset);
+  return date;
+};
+
+const formatWeekRange = (weekStart: string): string => {
+  const monday = weekDate(weekStart, 0);
+  const sunday = weekDate(weekStart, 6);
+  const month = new Intl.DateTimeFormat(undefined, { month: 'short', timeZone: 'UTC' });
+  const day = new Intl.DateTimeFormat(undefined, { day: 'numeric', timeZone: 'UTC' });
+  return `Mon ${day.format(monday)} – Sun ${day.format(sunday)} ${month.format(sunday)}`;
+};
+
+const shiftWeek = (weekStart: string, amount: number): string => {
+  const date = weekDate(weekStart, amount * 7);
+  return startOfIsoWeek(date);
+};
 
 const ACTIVITIES: readonly ExternalActivity[] = [
   'run',
@@ -405,6 +435,14 @@ export class GfApp extends LitElement {
     adminError: { state: true },
     theme: { state: true },
     view: { state: true },
+    weekStart: { state: true },
+    weekSource: { state: true },
+    calendarWeeks: { state: true },
+    calendarAssignments: { state: true },
+    calendarPlans: { state: true },
+    calendarBusy: { state: true },
+    calendarMenuWeek: { state: true },
+    calendarMenuIndex: { state: true },
     goal: { state: true },
     experience: { state: true },
     equipment: { state: true },
@@ -459,7 +497,15 @@ export class GfApp extends LitElement {
   declare adminDetail: { user: PublicUser; audit: AuditRow[] } | null;
   declare adminError: string | null;
   declare theme: ThemeId;
-  declare view: 'generate' | 'week' | 'admin' | 'calculator' | 'exercises';
+  declare view: 'generate' | 'week' | 'calendar' | 'admin' | 'calculator' | 'exercises';
+  declare weekStart: string;
+  declare weekSource: 'assigned' | 'default' | null;
+  declare calendarWeeks: string[];
+  declare calendarAssignments: WeekAssignment[];
+  declare calendarPlans: PlanSummary[];
+  declare calendarBusy: boolean;
+  declare calendarMenuWeek: string | null;
+  declare calendarMenuIndex: number;
   declare goal: Goal;
   declare experience: Experience;
   declare equipment: Equipment[];
@@ -530,6 +576,14 @@ export class GfApp extends LitElement {
     this.adminError = null;
     this.theme = readInitialTheme();
     this.view = 'generate';
+    this.weekStart = startOfIsoWeek(new Date());
+    this.weekSource = null;
+    this.calendarWeeks = [];
+    this.calendarAssignments = [];
+    this.calendarPlans = [];
+    this.calendarBusy = false;
+    this.calendarMenuWeek = null;
+    this.calendarMenuIndex = 0;
     this.goal = 'build_muscle';
     this.experience = 'intermediate';
     this.equipment = [...EQUIPMENT];
@@ -575,8 +629,21 @@ export class GfApp extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    document.addEventListener('click', this.onCalendarDocumentClick);
     void this.bootstrap();
   }
+
+  override disconnectedCallback(): void {
+    document.removeEventListener('click', this.onCalendarDocumentClick);
+    super.disconnectedCallback();
+  }
+
+  private readonly onCalendarDocumentClick = (event: MouseEvent): void => {
+    const insideCalendarDropdown = event
+      .composedPath()
+      .some((node) => node instanceof Element && node.hasAttribute('data-calendar-dropdown'));
+    if (!insideCalendarDropdown) this.closeCalendarMenu();
+  };
 
   /** Resolve the current session, then gate the app on whether we're signed in. */
   private async bootstrap(): Promise<void> {
@@ -643,6 +710,196 @@ export class GfApp extends LitElement {
     this.authStatus = 'ready';
     void this.syncSettings();
     void this.loadExercises();
+    void this.loadResolvedWeek(this.weekStart);
+  }
+
+  private async loadResolvedWeek(weekStart: string): Promise<void> {
+    this.weekStart = weekStart;
+    try {
+      const resolved = await api.resolveWeek(weekStart);
+      this.weekSource = resolved.source;
+      this.plan = resolved.plan;
+      if (this.plan !== null) {
+        this.view = 'week';
+        this.progress = {};
+        this.dayVolume = {};
+        this.weekVolume = null;
+        void this.refreshWeekVolume();
+      } else if (this.view === 'week') {
+        this.view = 'generate';
+      }
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not load this week.';
+    }
+  }
+
+  private async openCalendar(): Promise<void> {
+    this.view = 'calendar';
+    this.calendarBusy = true;
+    try {
+      const center = startOfIsoWeek(new Date());
+      const from = shiftWeek(center, -6);
+      const to = shiftWeek(center, 6);
+      const [{ assignments }, { plans }] = await Promise.all([
+        api.listWeekAssignments(from, to),
+        api.listPlans(),
+      ]);
+      this.calendarWeeks = Array.from({ length: 13 }, (_, i) => shiftWeek(from, i));
+      this.calendarAssignments = assignments;
+      this.calendarPlans = plans;
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not load calendar.';
+    } finally {
+      this.calendarBusy = false;
+    }
+  }
+
+  private async assignCalendarWeek(weekStart: string, planId: string): Promise<void> {
+    this.calendarBusy = true;
+    try {
+      await api.assignWeek(weekStart, planId);
+      await this.openCalendar();
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not tag this week.';
+    } finally {
+      this.calendarBusy = false;
+    }
+  }
+
+  private async unassignCalendarWeek(weekStart: string): Promise<void> {
+    this.closeCalendarMenu();
+    this.calendarBusy = true;
+    try {
+      await api.unassignWeek(weekStart);
+      await this.openCalendar();
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not untag this week.';
+    } finally {
+      this.calendarBusy = false;
+    }
+  }
+
+  private async makeDefault(planId: string): Promise<void> {
+    this.calendarBusy = true;
+    try {
+      await api.setDefaultPlan(planId);
+      await this.openCalendar();
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not set the default plan.';
+    } finally {
+      this.calendarBusy = false;
+    }
+  }
+
+  private async clearDefault(planId: string): Promise<void> {
+    this.calendarBusy = true;
+    try {
+      await api.clearDefaultPlan(planId);
+      await this.openCalendar();
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not clear the default plan.';
+    } finally {
+      this.calendarBusy = false;
+    }
+  }
+
+  private closeCalendarMenu(): void {
+    this.calendarMenuWeek = null;
+    this.calendarMenuIndex = 0;
+  }
+
+  private calendarMenuItems(assignment: WeekAssignment | undefined): CalendarMenuItem[] {
+    const plans: CalendarMenuItem[] = this.calendarPlans.map((plan) => ({
+      kind: 'plan',
+      id: plan.id,
+      label: `${titleCase(plan.goal)} · Week ${plan.variation}`,
+    }));
+    if (plans.length === 0) {
+      return [{ kind: 'empty', id: 'empty', label: 'Generate a plan first' }];
+    }
+    return assignment === undefined
+      ? plans
+      : [{ kind: 'untag', id: 'untag', label: 'Untag this week' }, ...plans];
+  }
+
+  private focusCalendarMenuItem(weekStart: string, index: number): void {
+    void this.updateComplete.then(() => {
+      const item = this.renderRoot.querySelector<HTMLElement>(
+        `[data-calendar-menu-item="${weekStart}"][data-calendar-menu-index="${index}"]`,
+      );
+      item?.focus();
+    });
+  }
+
+  private openCalendarMenu(weekStart: string, assignment: WeekAssignment | undefined): void {
+    const items = this.calendarMenuItems(assignment);
+    const selected =
+      assignment === undefined
+        ? 0
+        : items.findIndex((item) => item.kind === 'plan' && item.id === assignment.planId);
+    this.calendarMenuWeek = weekStart;
+    this.calendarMenuIndex = selected >= 0 ? selected : 0;
+    this.focusCalendarMenuItem(weekStart, this.calendarMenuIndex);
+  }
+
+  private selectCalendarMenuItem(weekStart: string, item: CalendarMenuItem): void {
+    if (item.kind === 'empty') return;
+    this.closeCalendarMenu();
+    if (item.kind === 'untag') {
+      void this.unassignCalendarWeek(weekStart);
+    } else {
+      void this.assignCalendarWeek(weekStart, item.id);
+    }
+  }
+
+  private onCalendarTriggerKeydown(
+    event: KeyboardEvent,
+    weekStart: string,
+    assignment: WeekAssignment | undefined,
+  ): void {
+    if (event.key === 'Escape' && this.calendarMenuWeek === weekStart) {
+      event.preventDefault();
+      this.closeCalendarMenu();
+      return;
+    }
+    if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'ArrowDown') return;
+    event.preventDefault();
+    if (this.calendarMenuWeek === weekStart) {
+      this.closeCalendarMenu();
+    } else {
+      this.openCalendarMenu(weekStart, assignment);
+    }
+  }
+
+  private onCalendarMenuKeydown(
+    event: KeyboardEvent,
+    weekStart: string,
+    assignment: WeekAssignment | undefined,
+  ): void {
+    const items = this.calendarMenuItems(assignment);
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.closeCalendarMenu();
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const delta = event.key === 'ArrowDown' ? 1 : -1;
+      this.calendarMenuIndex = (this.calendarMenuIndex + delta + items.length) % items.length;
+      this.focusCalendarMenuItem(weekStart, this.calendarMenuIndex);
+      return;
+    }
+    if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      this.calendarMenuIndex = event.key === 'Home' ? 0 : items.length - 1;
+      this.focusCalendarMenuItem(weekStart, this.calendarMenuIndex);
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      const item = items[this.calendarMenuIndex];
+      if (item !== undefined) this.selectCalendarMenuItem(weekStart, item);
+    }
   }
 
   /** Load the catalog (once) + the account's custom exercises. */
@@ -724,6 +981,7 @@ export class GfApp extends LitElement {
   private resetToAuth(): void {
     this.user = null;
     this.plan = null;
+    this.weekSource = null;
     this.resetHistory();
     this.progress = {};
     this.dayVolume = {};
@@ -952,6 +1210,8 @@ export class GfApp extends LitElement {
         seed: Math.floor(Math.random() * 0x7fffffff),
       });
       this.plan = plan;
+      this.weekStart = startOfIsoWeek(new Date());
+      this.weekSource = 'assigned';
       this.resetHistory();
       this.progress = {};
       this.dayVolume = {};
@@ -1437,6 +1697,7 @@ export class GfApp extends LitElement {
   private renderMain(): TemplateResult {
     if (this.view === 'admin') return this.renderAdmin();
     if (this.view === 'week') return this.renderWeek();
+    if (this.view === 'calendar') return this.renderCalendar();
     if (this.view === 'calculator') return this.renderCalculator();
     if (this.view === 'exercises') return this.renderExercises();
     return this.renderGenerator();
@@ -1743,6 +2004,14 @@ export class GfApp extends LitElement {
         >
           <span class="tab-icon" aria-hidden="true">${ICON_WEEK}</span>
           <span class="tab-label">My week</span>
+        </button>
+        <button
+          class=${this.view === 'calendar' ? 'tab active' : 'tab'}
+          data-testid="nav-calendar"
+          @click=${() => void this.openCalendar()}
+        >
+          <span class="tab-icon" aria-hidden="true">${ICON_CALENDAR}</span>
+          <span class="tab-label">Calendar</span>
         </button>
         <button
           class=${this.view === 'exercises' ? 'tab active' : 'tab'}
@@ -2269,13 +2538,172 @@ export class GfApp extends LitElement {
     return html`
       <section class="panel" data-testid="week">
         <div class="week-head">
-          <h1>${titleCase(plan.goal)} · Week ${plan.variation}</h1>
-          <button class="ghost" data-testid="rebuild" @click=${() => void this.onGenerate()}>
-            Boredom swap ↻
-          </button>
+          <div>
+            <h1>${titleCase(plan.goal)} · Week ${plan.variation}</h1>
+            <p class="week-range" data-testid="week-range">${formatWeekRange(this.weekStart)}</p>
+            <span
+              class="pill ${this.weekSource === 'assigned' ? 'ok' : 'off'}"
+              data-testid="week-source"
+            >
+              ${this.weekSource === 'assigned' ? 'Tagged to this week' : 'Default plan'}
+            </span>
+          </div>
+          <div class="week-actions">
+            <button
+              class="ghost"
+              data-testid="previous-week"
+              @click=${() => void this.loadResolvedWeek(shiftWeek(this.weekStart, -1))}
+            >
+              ←
+            </button>
+            <button
+              class="ghost"
+              data-testid="next-week"
+              @click=${() => void this.loadResolvedWeek(shiftWeek(this.weekStart, 1))}
+            >
+              →
+            </button>
+            <button class="ghost" data-testid="rebuild" @click=${() => void this.onGenerate()}>
+              Boredom swap ↻
+            </button>
+          </div>
         </div>
         <div class="week-grid">${plan.days.map((d) => this.renderDayCard(d))}</div>
         ${this.renderVolumeCard('Week volume', this.weekVolume, 'week-volume')}
+      </section>
+    `;
+  }
+
+  private renderCalendar(): TemplateResult {
+    const defaultPlan = this.calendarPlans.find((p) => p.isDefault);
+    const assignmentFor = (week: string): WeekAssignment | undefined =>
+      this.calendarAssignments.find((a) => a.weekStart === week);
+    return html`
+      <section class="panel" data-testid="calendar">
+        <div class="week-head">
+          <div>
+            <h1>Calendar</h1>
+            <p class="lede">Tag a plan to a week, or let your default plan carry forward.</p>
+          </div>
+        </div>
+        ${this.calendarBusy ? html`<p>Loading calendar…</p>` : nothing}
+        <div class="calendar-list">
+          ${this.calendarWeeks.map((week) => {
+            const assignment = assignmentFor(week);
+            const plan =
+              assignment === undefined
+                ? defaultPlan
+                : this.calendarPlans.find((p) => p.id === assignment.planId);
+            const taggedPlan =
+              assignment === undefined
+                ? undefined
+                : this.calendarPlans.find((p) => p.id === assignment.planId);
+            const menuItems = this.calendarMenuItems(assignment);
+            const source =
+              assignment === undefined
+                ? defaultPlan === undefined
+                  ? 'none'
+                  : 'default'
+                : 'assigned';
+            return html`
+              <article class="calendar-row" data-testid=${`calendar-week-${week}`}>
+                <div>
+                  <strong>${formatWeekRange(week)}</strong>
+                  <p class="muted">
+                    ${plan === undefined
+                      ? 'No plan'
+                      : `${titleCase(plan.goal)} · Week ${plan.variation}`}
+                    ${source === 'assigned'
+                      ? ' · tagged'
+                      : source === 'default'
+                        ? ' · default'
+                        : ''}
+                  </p>
+                </div>
+                <div class="calendar-controls">
+                  <div class="calendar-dropdown" data-calendar-dropdown>
+                    <button
+                      class="calendar-dropdown-trigger ghost"
+                      data-testid=${`calendar-dropdown-trigger-${week}`}
+                      aria-haspopup="listbox"
+                      aria-expanded=${this.calendarMenuWeek === week}
+                      aria-controls=${`calendar-dropdown-menu-${week}`}
+                      @click=${() => {
+                        if (this.calendarMenuWeek === week) {
+                          this.closeCalendarMenu();
+                        } else {
+                          this.openCalendarMenu(week, assignment);
+                        }
+                      }}
+                      @keydown=${(event: KeyboardEvent) =>
+                        this.onCalendarTriggerKeydown(event, week, assignment)}
+                    >
+                      ${taggedPlan === undefined
+                        ? 'Tag a plan…'
+                        : `${titleCase(taggedPlan.goal)} · Week ${taggedPlan.variation}`}
+                      <span class="calendar-dropdown-chevron" aria-hidden="true">⌄</span>
+                    </button>
+                    ${this.calendarMenuWeek === week
+                      ? html`<div
+                          class="calendar-dropdown-menu"
+                          id=${`calendar-dropdown-menu-${week}`}
+                          data-testid=${`calendar-dropdown-menu-${week}`}
+                          role="listbox"
+                          aria-label=${`Plans for ${formatWeekRange(week)}`}
+                          @keydown=${(event: KeyboardEvent) =>
+                            this.onCalendarMenuKeydown(event, week, assignment)}
+                        >
+                          ${menuItems.map(
+                            (item, index) => html`
+                              <button
+                                class="calendar-dropdown-item"
+                                data-calendar-menu-item=${week}
+                                data-calendar-menu-index=${index}
+                                data-testid=${`calendar-dropdown-item-${week}-${item.id}`}
+                                role="option"
+                                aria-selected=${item.kind === 'plan' &&
+                                item.id === assignment?.planId}
+                                ?disabled=${item.kind === 'empty'}
+                                tabindex=${index === this.calendarMenuIndex ? 0 : -1}
+                                @focus=${() => {
+                                  this.calendarMenuIndex = index;
+                                }}
+                                @click=${() => this.selectCalendarMenuItem(week, item)}
+                              >
+                                <span>${item.label}</span>
+                                ${item.kind === 'plan' && item.id === assignment?.planId
+                                  ? html`<span class="calendar-dropdown-check" aria-hidden="true">
+                                      ✓
+                                    </span>`
+                                  : nothing}
+                              </button>
+                            `,
+                          )}
+                        </div>`
+                      : nothing}
+                  </div>
+                </div>
+              </article>
+            `;
+          })}
+        </div>
+        <div class="calendar-plans">
+          <h2>Your plans</h2>
+          ${this.calendarPlans.map(
+            (plan) => html`
+              <div class="calendar-plan" data-testid=${`calendar-plan-${plan.id}`}>
+                <span>${titleCase(plan.goal)} · Week ${plan.variation}</span>
+                ${plan.isDefault
+                  ? html`<button class="link" @click=${() => void this.clearDefault(plan.id)}>
+                      Clear default
+                    </button>`
+                  : html`<button class="link" @click=${() => void this.makeDefault(plan.id)}>
+                      Set as default
+                    </button>`}
+              </div>
+            `,
+          )}
+        </div>
       </section>
     `;
   }
@@ -3414,6 +3842,27 @@ export class GfApp extends LitElement {
         grid-template-columns: 2.25rem minmax(0, 1fr) auto minmax(0, 1fr) 4rem;
         gap: 6px;
       }
+      .week-head,
+      .calendar-row,
+      .calendar-plan {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .week-actions,
+      .calendar-controls {
+        justify-content: flex-start;
+      }
+      .calendar-dropdown {
+        width: 100%;
+      }
+      .calendar-dropdown-trigger {
+        width: 100%;
+        justify-content: space-between;
+      }
+      .calendar-dropdown-menu {
+        left: 0;
+        right: auto;
+      }
     }
     .calc-headline,
     .calc-prescription {
@@ -3511,6 +3960,116 @@ export class GfApp extends LitElement {
       justify-content: space-between;
       margin-bottom: 14px;
       gap: 10px;
+    }
+    .week-range {
+      margin: 4px 0 8px;
+      color: var(--gf-muted);
+    }
+    .week-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .calendar-list,
+    .calendar-plans {
+      display: grid;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .calendar-row,
+    .calendar-plan {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px;
+      border: 1px solid var(--gf-border);
+      border-radius: var(--gf-radius);
+      background: var(--gf-surface-2, var(--gf-surface));
+    }
+    .calendar-row p {
+      margin: 4px 0 0;
+    }
+    .calendar-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .calendar-dropdown {
+      position: relative;
+      min-width: 220px;
+    }
+    .calendar-dropdown-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      max-width: min(300px, calc(100vw - 48px));
+      overflow: hidden;
+      text-align: left;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .calendar-dropdown-chevron {
+      flex: 0 0 auto;
+      color: var(--gf-muted);
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+    .calendar-dropdown-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      width: min(300px, calc(100vw - 32px));
+      max-height: min(320px, 50vh);
+      overflow-y: auto;
+      padding: 6px;
+      background: var(--gf-surface);
+      border: 1px solid var(--gf-border);
+      border-radius: var(--gf-radius-sm);
+      box-shadow: var(--gf-shadow);
+    }
+    .calendar-dropdown-item {
+      appearance: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      width: 100%;
+      min-height: 44px;
+      padding: 10px;
+      border: none;
+      border-radius: var(--gf-radius-sm);
+      background: transparent;
+      color: var(--gf-text);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .calendar-dropdown-item:hover,
+    .calendar-dropdown-item:focus-visible,
+    .calendar-dropdown-item[aria-selected='true'] {
+      background: var(--gf-hover);
+    }
+    .calendar-dropdown-item:focus-visible {
+      outline: 2px solid var(--gf-accent);
+      outline-offset: -2px;
+    }
+    .calendar-dropdown-item:disabled {
+      color: var(--gf-muted);
+      cursor: default;
+    }
+    .calendar-dropdown-check {
+      flex: 0 0 auto;
+      color: var(--gf-accent);
+      font-weight: 700;
     }
     .week-grid {
       display: grid;

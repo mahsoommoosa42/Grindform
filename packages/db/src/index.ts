@@ -16,6 +16,7 @@ export {
   settings,
   users,
   verificationTokens,
+  weekAssignments,
 } from './schema/tables.ts';
 export type { Db, DbOrTx, DbTx } from './client.ts';
 export { applyMigrations, splitStatements } from './migrate.ts';
@@ -32,6 +33,9 @@ export {
   listPlanSummaries,
   planBelongsToUser,
   updateDaySessions,
+  clearDefaultPlan,
+  getDefaultPlan,
+  setDefaultPlan,
 } from './repos/plans-repo.ts';
 export type { PlanSummary } from './repos/plans-repo.ts';
 export {
@@ -42,6 +46,13 @@ export {
 } from './repos/custom-exercises-repo.ts';
 export { deleteLog, listLogsForDay, listLogsForExercise, logSet } from './repos/logs-repo.ts';
 export type { NewSetLog, SetLog } from './repos/logs-repo.ts';
+export {
+  assignWeek,
+  getWeekAssignment,
+  listWeekAssignments,
+  unassignWeek,
+} from './repos/weeks-repo.ts';
+export type { WeekAssignment } from './repos/weeks-repo.ts';
 export { getSettings, upsertSettings } from './repos/settings-repo.ts';
 export type { Settings, SettingsPatch } from './repos/settings-repo.ts';
 export {

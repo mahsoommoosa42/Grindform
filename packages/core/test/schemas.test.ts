@@ -15,6 +15,8 @@ import {
   RoleSchema,
   TimeBudgetSchema,
   WEEKDAYS,
+  WeekStartSchema,
+  startOfIsoWeek,
 } from '../src/schemas.ts';
 
 describe('enums', () => {
@@ -22,6 +24,20 @@ describe('enums', () => {
     expect(WEEKDAYS).toHaveLength(7);
     expect(WEEKDAYS[0]).toBe('mon');
     expect(WEEKDAYS[6]).toBe('sun');
+  });
+});
+
+describe('calendar week helpers', () => {
+  it('accepts only valid Monday week starts', () => {
+    expect(WeekStartSchema.parse('2026-07-06')).toBe('2026-07-06');
+    expect(WeekStartSchema.safeParse('not-a-date').success).toBe(false);
+    expect(WeekStartSchema.safeParse('2026-07-07').success).toBe(false);
+    expect(WeekStartSchema.safeParse('2026-02-30').success).toBe(false);
+  });
+
+  it('returns the UTC Monday for dates throughout the week', () => {
+    expect(startOfIsoWeek(new Date('2026-07-06T00:00:00Z'))).toBe('2026-07-06');
+    expect(startOfIsoWeek(new Date('2026-07-12T23:59:00Z'))).toBe('2026-07-06');
   });
 });
 

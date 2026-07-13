@@ -178,6 +178,30 @@ export interface WeeklyPlan {
   readonly days: readonly PlanDay[];
 }
 
+export interface PlanSummary {
+  readonly id: string;
+  readonly goal: Goal;
+  readonly experience: Experience;
+  readonly variation: 'A' | 'B';
+  readonly isDefault: boolean;
+  readonly createdAt: string;
+}
+
+export interface WeekAssignment {
+  readonly id: string;
+  readonly userId: string;
+  readonly planId: string;
+  readonly weekStart: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface WeekResolution {
+  readonly weekStart: string;
+  readonly source: 'assigned' | 'default' | null;
+  readonly plan: WeeklyPlan | null;
+}
+
 export interface SlotProgress {
   readonly slotId: string;
   readonly exerciseSlug: string;
