@@ -77,6 +77,40 @@ describe('program API', () => {
     expect((await (await client.request('/v1/weeks/2026-07-27')).json()).source).toBe('assigned');
   });
 
+  it('preserves the default plan across break replanning', async () => {
+    const created = await client.json('/v1/programs', 'POST', input);
+    const program = (await created.json()) as {
+      program: { id: string; weeks: Array<{ plan?: { id: string } }> };
+    };
+    const defaultPlanId = program.program.weeks[0]?.plan?.id;
+    expect(defaultPlanId).toBeTruthy();
+    const setDefault = await client.request(`/v1/plans/${defaultPlanId}/default`, {
+      method: 'PUT',
+    });
+    expect(setDefault.status).toBe(200);
+
+    for (const method of ['POST', 'DELETE'] as const) {
+      const changed = await client.json(
+        `/v1/programs/${program.program.id}/weeks/2026-07-27/break`,
+        method,
+        {},
+      );
+      expect(changed.status).toBe(200);
+      const plans = (await (await client.request('/v1/plans')).json()).plans as Array<{
+        id: string;
+        isDefault: boolean;
+        programId?: string;
+      }>;
+      expect(plans.filter((plan) => plan.isDefault)).toHaveLength(1);
+      expect(plans.find((plan) => plan.isDefault)?.programId).toBe(program.program.id);
+      const resolved = await client.request('/v1/weeks/2026-08-17');
+      expect(await resolved.json()).toMatchObject({
+        source: 'default',
+        plan: { id: expect.any(String) },
+      });
+    }
+  });
+
   it('rejects past and outside-program break requests', async () => {
     const created = await client.json('/v1/programs', 'POST', input);
     const program = (await created.json()) as { program: { id: string } };

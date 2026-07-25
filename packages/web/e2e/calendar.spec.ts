@@ -71,10 +71,11 @@ test('generates a program, replans a break week, and restores it when unmarked',
 }) => {
   await openApp(page);
   await page.getByTestId('program-weeks').fill('3');
+  await expect(page.getByTestId('generate')).toContainText('Generate 3-week program');
   await page.getByTestId('generate').click();
   await expect(page.getByTestId('calendar')).toBeVisible();
 
-  const { currentWeek, nextWeek, followingWeek } = await page.evaluate(() => {
+  const { currentWeek, nextWeek, followingWeek, afterProgramWeek } = await page.evaluate(() => {
     const monday = (date: Date): string => {
       const day = date.getUTCDay();
       date.setUTCDate(date.getUTCDate() - ((day + 6) % 7));
@@ -89,12 +90,18 @@ test('generates a program, replans a break week, and restores it when unmarked',
       followingWeek: new Date(new Date(`${current}T00:00:00Z`).getTime() + 14 * 86_400_000)
         .toISOString()
         .slice(0, 10),
+      afterProgramWeek: new Date(new Date(`${current}T00:00:00Z`).getTime() + 28 * 86_400_000)
+        .toISOString()
+        .slice(0, 10),
     };
   });
   const next = page.getByTestId(`calendar-week-${nextWeek}`);
   await expect(page.getByTestId(`calendar-load-${currentWeek}`)).toContainText('100%');
   await expect(page.getByTestId(`calendar-load-${nextWeek}`)).toContainText('105%');
   const baselineFollowing = await page.getByTestId(`calendar-load-${followingWeek}`).textContent();
+  const defaultPlan = page.locator('.calendar-plan').first();
+  await defaultPlan.getByRole('button', { name: 'Set as default' }).click();
+  await expect(defaultPlan).toContainText('Clear default');
 
   await page.getByTestId(`calendar-break-${nextWeek}`).click();
   await expect(next).toContainText('Break');
@@ -105,10 +112,14 @@ test('generates a program, replans a break week, and restores it when unmarked',
   );
   const adjustedFollowing = await page.getByTestId(`calendar-load-${followingWeek}`).textContent();
   expect(adjustedFollowing).not.toBe(baselineFollowing);
+  await expect(page.locator('.calendar-plan').filter({ hasText: 'Clear default' })).toHaveCount(1);
+  await expect(page.getByTestId(`calendar-week-${afterProgramWeek}`)).toContainText('default');
 
   await page.getByTestId(`calendar-break-${nextWeek}`).click();
   await expect(page.getByTestId(`calendar-load-${nextWeek}`)).toContainText('105%');
   await expect(page.getByTestId(`calendar-load-${followingWeek}`)).not.toContainText(
     'reduced after break',
   );
+  await expect(page.locator('.calendar-plan').filter({ hasText: 'Clear default' })).toHaveCount(1);
+  await expect(page.getByTestId(`calendar-week-${afterProgramWeek}`)).toContainText('default');
 });

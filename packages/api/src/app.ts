@@ -186,7 +186,18 @@ const persistProgramFuture = async (
   anchor: WeekStart,
   program: TrainingProgram,
 ): Promise<void> => {
+  const defaultPlanId = await getDefaultPlan(db, userId);
+  const defaultPlan = defaultPlanId === undefined ? undefined : await getPlan(db, defaultPlanId);
+  const defaultAssignment =
+    defaultPlanId === undefined
+      ? undefined
+      : (await listProgramAssignments(db, userId, programId)).find(
+          (assignment) => assignment.planId === defaultPlanId,
+        );
+  const defaultProgramWeekIndex =
+    defaultAssignment === undefined ? undefined : defaultPlan?.weekIndex;
   await deleteProgramFuture(db, userId, programId, anchor);
+  let replacementDefaultId: PlanId | undefined;
   for (const week of program.weeks.filter((item) => item.weekStart >= anchor)) {
     if (week.plan !== undefined) {
       await createPlan(db, userId, week.plan, {
@@ -194,6 +205,12 @@ const persistProgramFuture = async (
         programKind: week.kind,
         programLoadIndex: week.loadIndex,
       });
+      if (
+        defaultProgramWeekIndex !== undefined &&
+        week.plan.weekIndex === defaultProgramWeekIndex
+      ) {
+        replacementDefaultId = week.plan.id;
+      }
       await assignWeek(db, userId, week.weekStart, week.plan.id, {
         programId,
         kind: week.kind,
@@ -204,6 +221,9 @@ const persistProgramFuture = async (
         kind: week.kind,
       });
     }
+  }
+  if (replacementDefaultId !== undefined) {
+    await setDefaultPlan(db, userId, replacementDefaultId);
   }
   await updateProgramWeekCount(db, userId, programId, program.weeks.length);
 };
