@@ -4,7 +4,7 @@ import { MIGRATIONS } from '../src/bootstrap.ts';
 
 describe('MIGRATIONS', () => {
   it('exposes the ordered migrations with non-empty SQL', () => {
-    expect(MIGRATIONS).toHaveLength(6);
+    expect(MIGRATIONS).toHaveLength(7);
     expect(MIGRATIONS[0]?.name).toBe('0000_initial');
     expect(MIGRATIONS[0]?.sqlText).toContain('CREATE TABLE plans');
     expect(MIGRATIONS[1]?.name).toBe('0001_auth');

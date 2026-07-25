@@ -25,18 +25,28 @@ import { filterExercises, getExercise } from '@grindform/catalog';
 import type { FilterCriteria } from '@grindform/catalog';
 import {
   GeneratePlanInputSchema,
+  ProgramGenerationInputSchema,
   isGrindformError,
   isPlanId,
+  isProgramId,
+  newProgramId,
   NotFoundError,
   startOfIsoWeek,
   WeekStartSchema,
   toErrorPayload,
   ValidationError,
 } from '@grindform/core';
-import type { PlanId, UserId, WeekStart } from '@grindform/core';
+import type { PlanId, ProgramId, UserId, WeekStart } from '@grindform/core';
 import {
   createCustomExercise,
   createPlan,
+  createProgram,
+  deleteProgram,
+  deleteProgramFuture,
+  getProgram,
+  listProgramAssignments,
+  listPrograms,
+  updateProgramWeekCount,
   assignWeek,
   clearDefaultPlan,
   deleteCustomExercise,
@@ -61,10 +71,19 @@ import {
   addSlotToSession,
   customExerciseSlug,
   generatePlan,
+  generateProgram,
+  replanProgram,
   removeSlot,
   swapSlotExercise,
 } from '@grindform/planner';
-import type { ExerciseSlot, PlanDay, ResolvedExercise, WeeklyPlan } from '@grindform/planner';
+import type {
+  ExerciseSlot,
+  PlanDay,
+  ProgramWeek,
+  ResolvedExercise,
+  TrainingProgram,
+  WeeklyPlan,
+} from '@grindform/planner';
 import {
   getDayProgress,
   getDayVolume,
@@ -133,6 +152,61 @@ const weeksBetween = (from: string, to: string): number =>
       86_400_000 /
       7,
   );
+
+const ProgramIdParamSchema = z
+  .string()
+  .refine(isProgramId, { message: 'invalid ProgramId' })
+  .transform((s): ProgramId => s as ProgramId);
+
+const currentProgram = async (
+  db: Db,
+  userId: UserId,
+  record: NonNullable<Awaited<ReturnType<typeof getProgram>>>,
+): Promise<TrainingProgram> => {
+  const generated = generateProgram(record.input);
+  const assignments = await listProgramAssignments(db, userId, record.id);
+  const weeks: ProgramWeek[] = [];
+  for (const assignment of assignments) {
+    const plan = assignment.planId === null ? undefined : await getPlan(db, assignment.planId);
+    weeks.push({
+      weekStart: assignment.weekStart,
+      kind: assignment.kind,
+      loadIndex: plan?.loadIndex ?? 0,
+      ...(plan?.weekIndex === undefined ? {} : { weekIndex: plan.weekIndex }),
+      ...(plan === undefined ? {} : { plan }),
+    });
+  }
+  return { ...generated, weeks, weekCount: weeks.length };
+};
+
+const persistProgramFuture = async (
+  db: Db,
+  userId: UserId,
+  programId: ProgramId,
+  anchor: WeekStart,
+  program: TrainingProgram,
+): Promise<void> => {
+  await deleteProgramFuture(db, userId, programId, anchor);
+  for (const week of program.weeks.filter((item) => item.weekStart >= anchor)) {
+    if (week.plan !== undefined) {
+      await createPlan(db, userId, week.plan, {
+        programId,
+        programKind: week.kind,
+        programLoadIndex: week.loadIndex,
+      });
+      await assignWeek(db, userId, week.weekStart, week.plan.id, {
+        programId,
+        kind: week.kind,
+      });
+    } else {
+      await assignWeek(db, userId, week.weekStart, null, {
+        programId,
+        kind: week.kind,
+      });
+    }
+  }
+  await updateProgramWeekCount(db, userId, programId, program.weeks.length);
+};
 
 /** Find a day within a plan by id. */
 const findDay = (plan: WeeklyPlan, dayId: string): PlanDay | undefined =>
@@ -317,6 +391,85 @@ export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
     return c.json({ plan: generated.value }, 201);
   });
 
+  app.post('/v1/programs', guard, async (c) => {
+    const input = parseOrThrow(ProgramGenerationInputSchema, await c.req.json(), 'program input');
+    if (input.startWeek < startOfIsoWeek(now())) {
+      throw new ValidationError('program start week must not be in the past', {
+        startWeek: input.startWeek,
+      });
+    }
+    const generated = generateProgram(input);
+    const programId = newProgramId();
+    await createProgram(db, c.get('auth').userId, input, programId);
+    await persistProgramFuture(db, c.get('auth').userId, programId, input.startWeek, generated);
+    return c.json({ program: { id: programId, ...generated } }, 201);
+  });
+
+  app.get('/v1/programs', guard, async (c) => {
+    return c.json({ programs: await listPrograms(db, c.get('auth').userId) });
+  });
+
+  app.get('/v1/programs/:programId', guard, async (c) => {
+    const programId = parseOrThrow(ProgramIdParamSchema, c.req.param('programId'), 'program id');
+    const record = await getProgram(db, c.get('auth').userId, programId);
+    if (record === undefined) throw new NotFoundError('program not found', { programId });
+    const program = await currentProgram(db, c.get('auth').userId, record);
+    return c.json({ program: { id: programId, ...program } });
+  });
+
+  app.post('/v1/programs/:programId/weeks/:weekStart/break', guard, async (c) => {
+    const programId = parseOrThrow(ProgramIdParamSchema, c.req.param('programId'), 'program id');
+    const weekStart = parseWeekStart(c.req.param('weekStart'));
+    const today = startOfIsoWeek(now());
+    if (weekStart < today) {
+      throw new ValidationError('break week must not be in the past', { weekStart });
+    }
+    const record = await getProgram(db, c.get('auth').userId, programId);
+    if (record === undefined) throw new NotFoundError('program not found', { programId });
+    const current = await currentProgram(db, c.get('auth').userId, record);
+    if (!current.weeks.some((week) => week.weekStart === weekStart)) {
+      throw new NotFoundError('program week not found', { weekStart });
+    }
+    const replanned = replanProgram({
+      program: current,
+      breakWeeks: [
+        ...current.weeks.filter((week) => week.kind === 'break').map((week) => week.weekStart),
+        weekStart,
+      ],
+      todayWeek: today,
+    });
+    await persistProgramFuture(db, c.get('auth').userId, programId, today, replanned);
+    return c.json({ program: { id: programId, ...replanned } });
+  });
+
+  app.delete('/v1/programs/:programId/weeks/:weekStart/break', guard, async (c) => {
+    const programId = parseOrThrow(ProgramIdParamSchema, c.req.param('programId'), 'program id');
+    const weekStart = parseWeekStart(c.req.param('weekStart'));
+    const today = startOfIsoWeek(now());
+    if (weekStart < today) {
+      throw new ValidationError('break week must not be in the past', { weekStart });
+    }
+    const record = await getProgram(db, c.get('auth').userId, programId);
+    if (record === undefined) throw new NotFoundError('program not found', { programId });
+    const current = await currentProgram(db, c.get('auth').userId, record);
+    const replanned = replanProgram({
+      program: current,
+      breakWeeks: current.weeks
+        .filter((week) => week.weekStart !== weekStart && week.kind === 'break')
+        .map((week) => week.weekStart),
+      todayWeek: today,
+    });
+    await persistProgramFuture(db, c.get('auth').userId, programId, today, replanned);
+    return c.json({ program: { id: programId, ...replanned } });
+  });
+
+  app.delete('/v1/programs/:programId', guard, async (c) => {
+    const programId = parseOrThrow(ProgramIdParamSchema, c.req.param('programId'), 'program id');
+    const removed = await deleteProgram(db, c.get('auth').userId, programId);
+    if (!removed) throw new NotFoundError('program not found', { programId });
+    return c.body(null, 204);
+  });
+
   app.get('/v1/plans', guard, async (c) => {
     const plans = await listPlanSummaries(db, c.get('auth').userId);
     return c.json({ plans });
@@ -370,6 +523,10 @@ export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
     const userId = c.get('auth').userId;
     const assignment = await getWeekAssignment(db, userId, weekStart);
     if (assignment !== undefined) {
+      if (assignment.kind === 'break') {
+        return c.json({ weekStart, source: 'break', kind: 'break', plan: null });
+      }
+      if (assignment.planId === null) return c.json({ weekStart, source: null, plan: null });
       const plan = await getPlan(db, assignment.planId);
       if (plan !== undefined && (await planBelongsToUser(db, plan.id, userId))) {
         return c.json({ weekStart, source: 'assigned', plan });

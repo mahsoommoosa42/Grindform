@@ -65,3 +65,50 @@ test('generated plans are tagged, survive reload, and carry forward as default',
   await tapOrClick(page, 'next-week');
   await expect(page.getByTestId('week-source')).toContainText('Default plan');
 });
+
+test('generates a program, replans a break week, and restores it when unmarked', async ({
+  page,
+}) => {
+  await openApp(page);
+  await page.getByTestId('program-weeks').fill('3');
+  await page.getByTestId('generate').click();
+  await expect(page.getByTestId('calendar')).toBeVisible();
+
+  const { currentWeek, nextWeek, followingWeek } = await page.evaluate(() => {
+    const monday = (date: Date): string => {
+      const day = date.getUTCDay();
+      date.setUTCDate(date.getUTCDate() - ((day + 6) % 7));
+      return date.toISOString().slice(0, 10);
+    };
+    const current = monday(new Date());
+    return {
+      currentWeek: current,
+      nextWeek: new Date(new Date(`${current}T00:00:00Z`).getTime() + 7 * 86_400_000)
+        .toISOString()
+        .slice(0, 10),
+      followingWeek: new Date(new Date(`${current}T00:00:00Z`).getTime() + 14 * 86_400_000)
+        .toISOString()
+        .slice(0, 10),
+    };
+  });
+  const next = page.getByTestId(`calendar-week-${nextWeek}`);
+  await expect(page.getByTestId(`calendar-load-${currentWeek}`)).toContainText('100%');
+  await expect(page.getByTestId(`calendar-load-${nextWeek}`)).toContainText('105%');
+  const baselineFollowing = await page.getByTestId(`calendar-load-${followingWeek}`).textContent();
+
+  await page.getByTestId(`calendar-break-${nextWeek}`).click();
+  await expect(next).toContainText('Break');
+  await expect(next).toContainText('no plan');
+  await expect(page.getByTestId(`calendar-load-${nextWeek}`)).toContainText('0%');
+  await expect(page.getByTestId(`calendar-load-${followingWeek}`)).toContainText(
+    'reduced after break',
+  );
+  const adjustedFollowing = await page.getByTestId(`calendar-load-${followingWeek}`).textContent();
+  expect(adjustedFollowing).not.toBe(baselineFollowing);
+
+  await page.getByTestId(`calendar-break-${nextWeek}`).click();
+  await expect(page.getByTestId(`calendar-load-${nextWeek}`)).toContainText('105%');
+  await expect(page.getByTestId(`calendar-load-${followingWeek}`)).not.toContainText(
+    'reduced after break',
+  );
+});

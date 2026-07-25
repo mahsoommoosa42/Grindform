@@ -34,6 +34,8 @@ import type {
   LogId,
   MuscleGroup,
   PlanId,
+  ProgramId,
+  ProgramWeekKind,
   Role,
   SessionId,
   SlotId,
@@ -95,11 +97,26 @@ export const auditLog = pgTable('audit_log', {
 export const plans = pgTable('plans', {
   id: text('id').primaryKey().$type<PlanId>(),
   userId: text('user_id').notNull().$type<UserId>(),
+  programId: text('program_id').$type<ProgramId>(),
+  programWeekIndex: integer('program_week_index'),
+  programKind: text('program_kind').$type<ProgramWeekKind>(),
+  programLoadIndex: doublePrecision('program_load_index'),
   goal: text('goal').notNull().$type<Goal>(),
   experience: text('experience').notNull().$type<Experience>(),
   variation: text('variation').notNull().$type<'A' | 'B'>(),
   timeBudget: jsonb('time_budget').notNull().$type<TimeBudget>(),
   isDefault: boolean('is_default').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** A reproducible multi-week program definition. */
+export const programs = pgTable('programs', {
+  id: text('id').primaryKey().$type<ProgramId>(),
+  userId: text('user_id').notNull().$type<UserId>(),
+  startWeek: date('start_week', { mode: 'string' }).notNull().$type<WeekStart>(),
+  weekCount: integer('week_count').notNull(),
+  input: jsonb('input').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -110,7 +127,9 @@ export const weekAssignments = pgTable(
   {
     id: text('id').primaryKey(),
     userId: text('user_id').notNull().$type<UserId>(),
-    planId: text('plan_id').notNull().$type<PlanId>(),
+    planId: text('plan_id').$type<PlanId>(),
+    programId: text('program_id').$type<ProgramId>(),
+    kind: text('kind').notNull().default('train').$type<ProgramWeekKind>(),
     weekStart: date('week_start', { mode: 'string' }).notNull().$type<WeekStart>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

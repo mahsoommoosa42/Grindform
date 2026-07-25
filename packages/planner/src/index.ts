@@ -16,6 +16,17 @@ export type {
   WeeklyPlan,
 } from './types.ts';
 export { generatePlan } from './generate.ts';
+export { DEFAULT_PROGRAM_CURVE, generateProgram, replanProgram, scalePlanLoad } from './program.ts';
+export type { ProgramWeek, ReplanInput, TrainingProgram } from './program.ts';
+export {
+  ACWR_WINDOW_WEEKS,
+  EXTERNAL_SESSION_LOAD_PER_MINUTE,
+  ROLE_INTENSITY_WEIGHTS,
+  ROLE_LOAD_WEIGHTS,
+  acuteChronicRatio,
+  chronicLoad,
+  planLoadUnits,
+} from './load.ts';
 export {
   addSlotToSession,
   buildSlot,

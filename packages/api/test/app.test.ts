@@ -783,7 +783,9 @@ describe('Calendar weeks and default plans', () => {
   let dispose: () => Promise<void>;
 
   beforeEach(async () => {
-    ({ app, dispose } = await freshApp());
+    ({ app, dispose } = await freshApp({
+      now: () => new Date('2026-07-06T12:00:00Z'),
+    }));
     client = await registerClient(app);
   });
   afterEach(async () => {
@@ -798,7 +800,7 @@ describe('Calendar weeks and default plans', () => {
 
   it('auto-tags generated plans, resolves defaults, and upserts assignments', async () => {
     const plan = await makePlan(client);
-    const current = startOfIsoWeek(new Date());
+    const current = startOfIsoWeek(new Date('2026-07-06T12:00:00Z'));
     const resolved = await client.request(`/v1/weeks/${current}`);
     expect(resolved.status).toBe(200);
     expect((await resolved.json()).source).toBe('assigned');
