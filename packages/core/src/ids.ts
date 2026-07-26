@@ -45,6 +45,9 @@ export type ExerciseSlug = Brand<string, 'ExerciseSlug'>;
 /** Identifier for a generated weekly plan. Prefix: `pln_`. */
 export type PlanId = Brand<string, 'PlanId'>;
 
+/** Identifier for a generated multi-week program. Prefix: `prg_`. */
+export type ProgramId = Brand<string, 'ProgramId'>;
+
 /** Identifier for a single day within a plan. Prefix: `day_`. */
 export type DayId = Brand<string, 'DayId'>;
 
@@ -76,6 +79,7 @@ const PREFIX = {
   session: 'ses',
   audit: 'aud',
   plan: 'pln',
+  program: 'prg',
   day: 'day',
   planSession: 'pss',
   slot: 'slt',
@@ -106,6 +110,9 @@ export const newAuditId = (): AuditId => make<AuditId>(PREFIX.audit);
 
 /** Mint a fresh, time-sortable {@link PlanId}. */
 export const newPlanId = (): PlanId => make<PlanId>(PREFIX.plan);
+
+/** Mint a fresh, time-sortable {@link ProgramId}. */
+export const newProgramId = (): ProgramId => make<ProgramId>(PREFIX.program);
 
 /** Mint a fresh, time-sortable {@link DayId}. */
 export const newDayId = (): DayId => make<DayId>(PREFIX.day);
@@ -149,6 +156,9 @@ export const isExerciseSlug = (s: string): s is ExerciseSlug =>
 /** Type guard: true iff `s` is a syntactically-valid {@link PlanId}. */
 export const isPlanId = (s: string): s is PlanId => matcher(PREFIX.plan).test(s);
 
+/** Type guard: true iff `s` is a syntactically-valid {@link ProgramId}. */
+export const isProgramId = (s: string): s is ProgramId => matcher(PREFIX.program).test(s);
+
 /** Type guard: true iff `s` is a syntactically-valid {@link DayId}. */
 export const isDayId = (s: string): s is DayId => matcher(PREFIX.day).test(s);
 
@@ -177,6 +187,12 @@ export const isVerificationTokenId = (s: string): s is VerificationTokenId =>
  */
 export const parsePlanId = (s: string): PlanId => {
   if (!isPlanId(s)) throw new Error(`invalid PlanId: ${s}`);
+  return s;
+};
+
+/** Validate `s` and return it branded as a {@link ProgramId}. */
+export const parseProgramId = (s: string): ProgramId => {
+  if (!isProgramId(s)) throw new Error(`invalid ProgramId: ${s}`);
   return s;
 };
 

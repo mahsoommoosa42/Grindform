@@ -4,7 +4,7 @@
 
 import { and, asc, eq, gte, lte } from 'drizzle-orm';
 
-import type { PlanId, UserId, WeekStart } from '@grindform/core';
+import type { PlanId, ProgramId, ProgramWeekKind, UserId, WeekStart } from '@grindform/core';
 
 import type { DbOrTx } from '../client.ts';
 import { weekAssignments } from '../schema/tables.ts';
@@ -12,27 +12,51 @@ import { weekAssignments } from '../schema/tables.ts';
 export interface WeekAssignment {
   readonly id: string;
   readonly userId: UserId;
-  readonly planId: PlanId;
+  readonly planId: PlanId | null;
+  readonly programId?: ProgramId;
+  readonly kind: ProgramWeekKind;
   readonly weekStart: WeekStart;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
 
-const mapAssignment = (row: typeof weekAssignments.$inferSelect): WeekAssignment => row;
+const mapAssignment = (row: typeof weekAssignments.$inferSelect): WeekAssignment => ({
+  id: row.id,
+  userId: row.userId,
+  planId: row.planId,
+  weekStart: row.weekStart,
+  kind: row.kind,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+  ...(row.programId === null ? {} : { programId: row.programId }),
+});
 
 export const assignWeek = async (
   db: DbOrTx,
   userId: UserId,
   weekStart: WeekStart,
-  planId: PlanId,
+  planId: PlanId | null,
+  options: { readonly programId?: ProgramId; readonly kind?: ProgramWeekKind } = {},
 ): Promise<WeekAssignment> => {
   const id = `${userId}:${weekStart}`;
   const [row] = await db
     .insert(weekAssignments)
-    .values({ id, userId, weekStart, planId })
+    .values({
+      id,
+      userId,
+      weekStart,
+      planId,
+      ...(options.programId === undefined ? {} : { programId: options.programId }),
+      kind: options.kind ?? 'train',
+    })
     .onConflictDoUpdate({
       target: [weekAssignments.userId, weekAssignments.weekStart],
-      set: { planId, updatedAt: new Date() },
+      set: {
+        planId,
+        programId: options.programId ?? null,
+        kind: options.kind ?? 'train',
+        updatedAt: new Date(),
+      },
     })
     .returning();
   return mapAssignment(row as typeof weekAssignments.$inferSelect);
@@ -79,6 +103,19 @@ export const listWeekAssignments = async (
         lte(weekAssignments.weekStart, to),
       ),
     )
+    .orderBy(asc(weekAssignments.weekStart));
+  return rows.map(mapAssignment);
+};
+
+export const listProgramAssignments = async (
+  db: DbOrTx,
+  userId: UserId,
+  programId: ProgramId,
+): Promise<readonly WeekAssignment[]> => {
+  const rows = await db
+    .select()
+    .from(weekAssignments)
+    .where(and(eq(weekAssignments.userId, userId), eq(weekAssignments.programId, programId)))
     .orderBy(asc(weekAssignments.weekStart));
   return rows.map(mapAssignment);
 };

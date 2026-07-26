@@ -15,6 +15,7 @@ import type {
   MuscleGroup,
   PlanId,
   PlanSessionId,
+  ProgramWeekKind,
   RepScheme,
   SlotId,
   TimeBudget,
@@ -113,4 +114,7 @@ export interface WeeklyPlan {
   readonly variation: 'A' | 'B';
   readonly timeBudget: TimeBudget;
   readonly days: readonly PlanDay[];
+  readonly weekIndex?: number;
+  readonly kind?: ProgramWeekKind;
+  readonly loadIndex?: number;
 }

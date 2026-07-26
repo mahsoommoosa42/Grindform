@@ -10,9 +10,11 @@ export {
   customExercises,
   planDays,
   plans,
+  programs,
   sessions,
   setLogs,
   settings,
   users,
   verificationTokens,
+  weekAssignments,
 } from './tables.ts';

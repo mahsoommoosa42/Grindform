@@ -15,6 +15,9 @@ import type {
   DayProgress,
   ExerciseRef,
   GeneratePlanRequest,
+  CreateProgramRequest,
+  ProgramSummary,
+  ProgramWeekSummary,
   PublicUser,
   Settings,
   ThemeId,
@@ -56,6 +59,25 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
 /** Generate + persist a weekly plan. */
 export const createPlan = (input: GeneratePlanRequest): Promise<{ plan: WeeklyPlan }> =>
   request('/v1/plans', { method: 'POST', body: JSON.stringify(input) });
+
+export const createProgram = (
+  input: CreateProgramRequest,
+): Promise<{ program: ProgramSummary & { weeks: ProgramWeekSummary[] } }> =>
+  request('/v1/programs', { method: 'POST', body: JSON.stringify(input) });
+
+export const listPrograms = (): Promise<{ programs: ProgramSummary[] }> => request('/v1/programs');
+
+export const markProgramBreak = (programId: string, weekStart: string): Promise<unknown> =>
+  request(`/v1/programs/${programId}/weeks/${weekStart}/break`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+
+export const unmarkProgramBreak = (programId: string, weekStart: string): Promise<unknown> =>
+  request(`/v1/programs/${programId}/weeks/${weekStart}/break`, { method: 'DELETE' });
+
+export const deleteProgram = (programId: string): Promise<void> =>
+  request(`/v1/programs/${programId}`, { method: 'DELETE' });
 
 /** Fetch a previously generated plan. */
 export const getPlan = (planId: string): Promise<{ plan: WeeklyPlan }> =>

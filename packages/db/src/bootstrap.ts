@@ -35,4 +35,8 @@ export const MIGRATIONS: readonly Migration[] = [
     name: '0005_week_calendar',
     sqlText: readFileSync(join(migrationsDir, '0005_week_calendar.sql'), 'utf8'),
   },
+  {
+    name: '0006_programs',
+    sqlText: readFileSync(join(migrationsDir, '0006_programs.sql'), 'utf8'),
+  },
 ];

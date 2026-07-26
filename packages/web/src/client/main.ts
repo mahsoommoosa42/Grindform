@@ -55,6 +55,7 @@ import type {
   WeeklyPlan,
   Weekday,
   PlanSummary,
+  ProgramSummary,
   WeekAssignment,
 } from './types.ts';
 
@@ -440,6 +441,7 @@ export class GfApp extends LitElement {
     calendarWeeks: { state: true },
     calendarAssignments: { state: true },
     calendarPlans: { state: true },
+    calendarPrograms: { state: true },
     calendarBusy: { state: true },
     calendarMenuWeek: { state: true },
     calendarMenuIndex: { state: true },
@@ -451,6 +453,7 @@ export class GfApp extends LitElement {
     cooldownMinutes: { state: true },
     physioMinutes: { state: true },
     variation: { state: true },
+    weeks: { state: true },
     days: { state: true },
     plan: { state: true },
     undoStack: { state: true },
@@ -499,10 +502,11 @@ export class GfApp extends LitElement {
   declare theme: ThemeId;
   declare view: 'generate' | 'week' | 'calendar' | 'admin' | 'calculator' | 'exercises';
   declare weekStart: string;
-  declare weekSource: 'assigned' | 'default' | null;
+  declare weekSource: 'assigned' | 'default' | 'break' | null;
   declare calendarWeeks: string[];
   declare calendarAssignments: WeekAssignment[];
   declare calendarPlans: PlanSummary[];
+  declare calendarPrograms: ProgramSummary[];
   declare calendarBusy: boolean;
   declare calendarMenuWeek: string | null;
   declare calendarMenuIndex: number;
@@ -514,6 +518,7 @@ export class GfApp extends LitElement {
   declare cooldownMinutes: number;
   declare physioMinutes: number;
   declare variation: 'A' | 'B';
+  declare weeks: number;
   declare days: DayConfig[];
   declare plan: WeeklyPlan | null;
   /** Past plan states for undo (most recent last); see {@link recordEdit}. */
@@ -581,6 +586,7 @@ export class GfApp extends LitElement {
     this.calendarWeeks = [];
     this.calendarAssignments = [];
     this.calendarPlans = [];
+    this.calendarPrograms = [];
     this.calendarBusy = false;
     this.calendarMenuWeek = null;
     this.calendarMenuIndex = 0;
@@ -592,6 +598,7 @@ export class GfApp extends LitElement {
     this.cooldownMinutes = 5;
     this.physioMinutes = 0;
     this.variation = 'A';
+    this.weeks = 1;
     this.days = DEFAULT_DAYS.map((d) => ({
       weekday: d.weekday,
       sessions: d.sessions.map((s) =>
@@ -725,6 +732,11 @@ export class GfApp extends LitElement {
         this.dayVolume = {};
         this.weekVolume = null;
         void this.refreshWeekVolume();
+      } else if (resolved.source === 'break') {
+        this.view = 'week';
+        this.progress = {};
+        this.dayVolume = {};
+        this.weekVolume = null;
       } else if (this.view === 'week') {
         this.view = 'generate';
       }
@@ -740,13 +752,15 @@ export class GfApp extends LitElement {
       const center = startOfIsoWeek(new Date());
       const from = shiftWeek(center, -6);
       const to = shiftWeek(center, 6);
-      const [{ assignments }, { plans }] = await Promise.all([
+      const [{ assignments }, { plans }, { programs }] = await Promise.all([
         api.listWeekAssignments(from, to),
         api.listPlans(),
+        api.listPrograms(),
       ]);
       this.calendarWeeks = Array.from({ length: 13 }, (_, i) => shiftWeek(from, i));
       this.calendarAssignments = assignments;
       this.calendarPlans = plans;
+      this.calendarPrograms = programs;
     } catch (err) {
       this.error = err instanceof ApiError ? err.message : 'Could not load calendar.';
     } finally {
@@ -779,6 +793,27 @@ export class GfApp extends LitElement {
     }
   }
 
+  private async toggleProgramBreak(
+    weekStart: string,
+    assignment: WeekAssignment | undefined,
+  ): Promise<void> {
+    if (assignment?.programId === undefined) return;
+    const { programId } = assignment;
+    this.calendarBusy = true;
+    try {
+      if (assignment.kind === 'break') {
+        await api.unmarkProgramBreak(programId, weekStart);
+      } else {
+        await api.markProgramBreak(programId, weekStart);
+      }
+      await this.openCalendar();
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not update the break week.';
+    } finally {
+      this.calendarBusy = false;
+    }
+  }
+
   private async makeDefault(planId: string): Promise<void> {
     this.calendarBusy = true;
     try {
@@ -798,6 +833,23 @@ export class GfApp extends LitElement {
       await this.openCalendar();
     } catch (err) {
       this.error = err instanceof ApiError ? err.message : 'Could not clear the default plan.';
+    } finally {
+      this.calendarBusy = false;
+    }
+  }
+
+  private async deleteCalendarProgram(programId: string): Promise<void> {
+    const confirmed =
+      typeof window === 'undefined'
+        ? true
+        : window.confirm('Delete this program and all of its weeks?');
+    if (!confirmed) return;
+    this.calendarBusy = true;
+    try {
+      await api.deleteProgram(programId);
+      await this.openCalendar();
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not delete this program.';
     } finally {
       this.calendarBusy = false;
     }
@@ -1194,7 +1246,7 @@ export class GfApp extends LitElement {
     this.busy = true;
     this.error = null;
     try {
-      const { plan } = await api.createPlan({
+      const request = {
         goal: this.goal,
         experience: this.experience,
         equipment: this.equipment,
@@ -1208,7 +1260,15 @@ export class GfApp extends LitElement {
         days: this.buildRequest(),
         variation: this.variation,
         seed: Math.floor(Math.random() * 0x7fffffff),
-      });
+      };
+      const startWeek = startOfIsoWeek(new Date());
+      if (this.weeks > 1) {
+        await api.createProgram({ ...request, startWeek, weeks: this.weeks });
+        await this.loadResolvedWeek(startWeek);
+        await this.openCalendar();
+        return;
+      }
+      const { plan } = await api.createPlan(request);
       this.plan = plan;
       this.weekStart = startOfIsoWeek(new Date());
       this.weekSource = 'assigned';
@@ -2272,6 +2332,24 @@ export class GfApp extends LitElement {
               <option value="B" ?selected=${this.variation === 'B'}>B week</option>
             </select>
           </label>
+          <label class="field">
+            <span>Program length (weeks)</span>
+            <input
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="16"
+              step="1"
+              data-testid="program-weeks"
+              .value=${String(this.weeks)}
+              @input=${(e: Event) => {
+                this.weeks = Math.max(
+                  1,
+                  Math.min(16, Number((e.target as HTMLInputElement).value)),
+                );
+              }}
+            />
+          </label>
         </div>
 
         <fieldset class="block">
@@ -2317,7 +2395,11 @@ export class GfApp extends LitElement {
           ?disabled=${this.busy}
           @click=${() => void this.onGenerate()}
         >
-          ${this.busy ? 'Generating…' : 'Generate my week'}
+          ${this.busy
+            ? 'Generating…'
+            : this.weeks > 1
+              ? `Generate ${this.weeks}-week program`
+              : 'Generate my week'}
         </button>
       </section>
     `;
@@ -2532,7 +2614,29 @@ export class GfApp extends LitElement {
 
   private renderWeek(): TemplateResult {
     if (this.plan === null) {
-      return html`<section class="panel"><p>No plan yet. Build one first.</p></section>`;
+      return html`
+        <section class="panel" data-testid="week">
+          <h1>Break week</h1>
+          <p class="lede" data-testid="break-week">This week is scheduled as a break.</p>
+          <p class="week-range" data-testid="week-range">${formatWeekRange(this.weekStart)}</p>
+          <div class="week-actions">
+            <button
+              class="ghost"
+              data-testid="previous-week"
+              @click=${() => void this.loadResolvedWeek(shiftWeek(this.weekStart, -1))}
+            >
+              ←
+            </button>
+            <button
+              class="ghost"
+              data-testid="next-week"
+              @click=${() => void this.loadResolvedWeek(shiftWeek(this.weekStart, 1))}
+            >
+              →
+            </button>
+          </div>
+        </section>
+      `;
     }
     const plan = this.plan;
     return html`
@@ -2578,6 +2682,11 @@ export class GfApp extends LitElement {
     const defaultPlan = this.calendarPlans.find((p) => p.isDefault);
     const assignmentFor = (week: string): WeekAssignment | undefined =>
       this.calendarAssignments.find((a) => a.weekStart === week);
+    const programWeekFor = (week: string) =>
+      this.calendarPrograms
+        .flatMap((program) => program.weeks.map((summary) => ({ ...summary, program })))
+        .find((summary) => summary.weekStart === week);
+    const currentWeek = startOfIsoWeek(new Date());
     return html`
       <section class="panel" data-testid="calendar">
         <div class="week-head">
@@ -2590,8 +2699,11 @@ export class GfApp extends LitElement {
         <div class="calendar-list">
           ${this.calendarWeeks.map((week) => {
             const assignment = assignmentFor(week);
-            const plan =
-              assignment === undefined
+            const programWeek = programWeekFor(week);
+            const isBreak = assignment?.kind === 'break';
+            const plan = isBreak
+              ? undefined
+              : assignment === undefined
                 ? defaultPlan
                 : this.calendarPlans.find((p) => p.id === assignment.planId);
             const taggedPlan =
@@ -2599,8 +2711,9 @@ export class GfApp extends LitElement {
                 ? undefined
                 : this.calendarPlans.find((p) => p.id === assignment.planId);
             const menuItems = this.calendarMenuItems(assignment);
-            const source =
-              assignment === undefined
+            const source = isBreak
+              ? 'break'
+              : assignment === undefined
                 ? defaultPlan === undefined
                   ? 'none'
                   : 'default'
@@ -2610,17 +2723,52 @@ export class GfApp extends LitElement {
                 <div>
                   <strong>${formatWeekRange(week)}</strong>
                   <p class="muted">
-                    ${plan === undefined
-                      ? 'No plan'
-                      : `${titleCase(plan.goal)} · Week ${plan.variation}`}
+                    ${isBreak
+                      ? 'Break · no plan'
+                      : plan === undefined
+                        ? 'No plan'
+                        : `${titleCase(plan.goal)} · Week ${plan.variation}`}
                     ${source === 'assigned'
                       ? ' · tagged'
                       : source === 'default'
                         ? ' · default'
                         : ''}
                   </p>
+                  ${programWeek === undefined
+                    ? nothing
+                    : html`<p
+                        class="muted calendar-program-load"
+                        data-testid=${`calendar-load-${week}`}
+                      >
+                        ${Math.round(programWeek.loadIndex * 100)}% · ${programWeek.kind}
+                        ${programWeek.kind === 'train' &&
+                        programWeek.programWeekIndex !== undefined &&
+                        programWeek.loadIndex <
+                          (() => {
+                            const curve = programWeek.program.input.curve;
+                            const index = programWeek.programWeekIndex;
+                            const deloadEvery = curve?.deloadEvery ?? 4;
+                            const deloadLoadIndex = curve?.deloadLoadIndex ?? 0.6;
+                            return index % deloadEvery === deloadEvery - 1
+                              ? deloadLoadIndex
+                              : 1 + (index % deloadEvery) * (curve?.weeklyIncrement ?? 0.05);
+                          })()
+                          ? ' · reduced after break'
+                          : ''}
+                      </p>`}
                 </div>
                 <div class="calendar-controls">
+                  ${programWeek !== undefined &&
+                  assignment?.programId !== undefined &&
+                  week >= currentWeek
+                    ? html`<button
+                        class="ghost"
+                        data-testid=${`calendar-break-${week}`}
+                        @click=${() => void this.toggleProgramBreak(week, assignment)}
+                      >
+                        ${isBreak ? 'Unmark break' : 'Mark break'}
+                      </button>`
+                    : nothing}
                   <div class="calendar-dropdown" data-calendar-dropdown>
                     <button
                       class="calendar-dropdown-trigger ghost"
@@ -2700,6 +2848,26 @@ export class GfApp extends LitElement {
                   : html`<button class="link" @click=${() => void this.makeDefault(plan.id)}>
                       Set as default
                     </button>`}
+              </div>
+            `,
+          )}
+        </div>
+        <div class="calendar-plans">
+          <h2>Your programs</h2>
+          ${this.calendarPrograms.map(
+            (program) => html`
+              <div class="calendar-plan" data-testid=${`calendar-program-${program.id}`}>
+                <span
+                  >${program.weekCount}-week program from
+                  ${formatWeekRange(program.startWeek)}</span
+                >
+                <button
+                  class="link"
+                  data-testid=${`calendar-delete-program-${program.id}`}
+                  @click=${() => void this.deleteCalendarProgram(program.id)}
+                >
+                  Delete program
+                </button>
               </div>
             `,
           )}

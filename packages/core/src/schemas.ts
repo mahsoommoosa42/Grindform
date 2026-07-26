@@ -323,6 +323,35 @@ export const GeneratePlanInputSchema = z.object({
 export type GeneratePlanInput = z.infer<typeof GeneratePlanInputSchema>;
 
 // ---------------------------------------------------------------------------
+// Multi-week programs.
+// ---------------------------------------------------------------------------
+
+/** The lifecycle kind of one week in a generated training program. */
+export const ProgramWeekKindSchema = z.enum(['train', 'deload', 'break']);
+export type ProgramWeekKind = z.infer<typeof ProgramWeekKindSchema>;
+
+/** Tunable progression and recovery parameters for a multi-week program. */
+export const ProgramCurveConfigSchema = z.object({
+  weeklyIncrement: z.number().gt(0).max(1).default(0.05),
+  deloadEvery: z.number().int().min(2).max(16).default(4),
+  deloadLoadIndex: z.number().gt(0).lt(1).default(0.6),
+  maxAcwr: z.number().gt(1).max(3).default(1.3),
+});
+export type ProgramCurveConfig = z.infer<typeof ProgramCurveConfigSchema>;
+
+/**
+ * Input for generating consecutive program weeks. It extends the ordinary
+ * weekly generator with a Monday start, a bounded week count, and curve
+ * configuration.
+ */
+export const ProgramGenerationInputSchema = GeneratePlanInputSchema.extend({
+  startWeek: WeekStartSchema,
+  weeks: z.number().int().min(1).max(16),
+  curve: ProgramCurveConfigSchema.optional(),
+});
+export type ProgramGenerationInput = z.infer<typeof ProgramGenerationInputSchema>;
+
+// ---------------------------------------------------------------------------
 // Accounts & authentication.
 // ---------------------------------------------------------------------------
 

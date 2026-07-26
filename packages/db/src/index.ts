@@ -11,6 +11,7 @@ export {
   customExercises,
   planDays,
   plans,
+  programs,
   sessions,
   setLogs,
   settings,
@@ -22,6 +23,15 @@ export type { Db, DbOrTx, DbTx } from './client.ts';
 export { applyMigrations, splitStatements } from './migrate.ts';
 export type { Migration } from './migrate.ts';
 export { MIGRATIONS } from './bootstrap.ts';
+export {
+  createProgram,
+  deleteProgram,
+  deleteProgramFuture,
+  getProgram,
+  listPrograms,
+  updateProgramWeekCount,
+} from './repos/programs-repo.ts';
+export type { ProgramRecord, ProgramSummary, ProgramWeekSummary } from './repos/programs-repo.ts';
 
 export {
   createPlan,
@@ -49,6 +59,7 @@ export type { NewSetLog, SetLog } from './repos/logs-repo.ts';
 export {
   assignWeek,
   getWeekAssignment,
+  listProgramAssignments,
   listWeekAssignments,
   unassignWeek,
 } from './repos/weeks-repo.ts';

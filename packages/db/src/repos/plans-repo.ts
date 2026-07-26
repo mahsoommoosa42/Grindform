@@ -9,7 +9,15 @@
 
 import { and, asc, desc, eq } from 'drizzle-orm';
 
-import type { DayId, Goal, Experience, PlanId, UserId } from '@grindform/core';
+import type {
+  DayId,
+  Goal,
+  Experience,
+  PlanId,
+  ProgramId,
+  ProgramWeekKind,
+  UserId,
+} from '@grindform/core';
 import type { PlanDay, PlanSession, WeeklyPlan } from '@grindform/planner';
 
 import type { DbOrTx } from '../client.ts';
@@ -23,6 +31,10 @@ export interface PlanSummary {
   readonly variation: 'A' | 'B';
   readonly isDefault: boolean;
   readonly createdAt: Date;
+  readonly programId?: ProgramId;
+  readonly programWeekIndex?: number;
+  readonly programKind?: ProgramWeekKind;
+  readonly programLoadIndex?: number;
 }
 
 /** A `plan_days` row as selected from the database. */
@@ -38,11 +50,33 @@ const mapDay = (row: PlanDayRow): PlanDay => ({
 });
 
 /** Insert a plan and all its days in a single transaction. */
-export const createPlan = async (db: DbOrTx, userId: UserId, plan: WeeklyPlan): Promise<void> => {
+export interface CreatePlanOptions {
+  readonly programId?: ProgramId;
+  readonly programWeekIndex?: number;
+  readonly programKind?: ProgramWeekKind;
+  readonly programLoadIndex?: number;
+}
+
+export const createPlan = async (
+  db: DbOrTx,
+  userId: UserId,
+  plan: WeeklyPlan,
+  options: CreatePlanOptions = {},
+): Promise<void> => {
   await db.transaction(async (tx) => {
     await tx.insert(plans).values({
       id: plan.id,
       userId,
+      ...(options.programId === undefined ? {} : { programId: options.programId }),
+      ...(options.programWeekIndex === undefined && plan.weekIndex === undefined
+        ? {}
+        : { programWeekIndex: options.programWeekIndex ?? plan.weekIndex }),
+      ...(options.programKind === undefined && plan.kind === undefined
+        ? {}
+        : { programKind: options.programKind ?? plan.kind }),
+      ...(options.programLoadIndex === undefined && plan.loadIndex === undefined
+        ? {}
+        : { programLoadIndex: options.programLoadIndex ?? plan.loadIndex }),
       goal: plan.goal,
       experience: plan.experience,
       variation: plan.variation,
@@ -78,6 +112,10 @@ export const getPlan = async (db: DbOrTx, planId: PlanId): Promise<WeeklyPlan | 
     variation: planRow.variation,
     timeBudget: planRow.timeBudget,
     days: dayRows.map(mapDay),
+    ...(planRow.programId === null ? {} : { programId: planRow.programId }),
+    ...(planRow.programWeekIndex === null ? {} : { weekIndex: planRow.programWeekIndex }),
+    ...(planRow.programKind === null ? {} : { kind: planRow.programKind }),
+    ...(planRow.programLoadIndex === null ? {} : { loadIndex: planRow.programLoadIndex }),
   };
 };
 
@@ -94,11 +132,26 @@ export const listPlanSummaries = async (
       variation: plans.variation,
       isDefault: plans.isDefault,
       createdAt: plans.createdAt,
+      programId: plans.programId,
+      programWeekIndex: plans.programWeekIndex,
+      programKind: plans.programKind,
+      programLoadIndex: plans.programLoadIndex,
     })
     .from(plans)
     .where(eq(plans.userId, userId))
     .orderBy(desc(plans.createdAt));
-  return rows;
+  return rows.map((row) => ({
+    id: row.id,
+    goal: row.goal,
+    experience: row.experience,
+    variation: row.variation,
+    isDefault: row.isDefault,
+    createdAt: row.createdAt,
+    ...(row.programId === null ? {} : { programId: row.programId }),
+    ...(row.programWeekIndex === null ? {} : { programWeekIndex: row.programWeekIndex }),
+    ...(row.programKind === null ? {} : { programKind: row.programKind }),
+    ...(row.programLoadIndex === null ? {} : { programLoadIndex: row.programLoadIndex }),
+  }));
 };
 
 /** True iff `planId` exists and belongs to `userId`. Guards against IDOR. */

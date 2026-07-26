@@ -7,6 +7,7 @@ import {
   isExerciseSlug,
   isLogId,
   isPlanId,
+  isProgramId,
   isPlanSessionId,
   isSessionId,
   isSlotId,
@@ -17,6 +18,7 @@ import {
   newDayId,
   newLogId,
   newPlanId,
+  newProgramId,
   newPlanSessionId,
   newSessionId,
   newSlotId,
@@ -28,6 +30,7 @@ import {
   parseExerciseSlug,
   parseLogId,
   parsePlanId,
+  parseProgramId,
   parseSessionId,
   parseSlotId,
   parseUserId,
@@ -39,6 +42,7 @@ describe('id factories produce prefixed, well-formed, sortable IDs', () => {
     { make: newSessionId, prefix: 'ses', guard: isSessionId },
     { make: newAuditId, prefix: 'aud', guard: isAuditId },
     { make: newPlanId, prefix: 'pln', guard: isPlanId },
+    { make: newProgramId, prefix: 'prg', guard: isProgramId },
     { make: newDayId, prefix: 'day', guard: isDayId },
     { make: newPlanSessionId, prefix: 'pss', guard: isPlanSessionId },
     { make: newSlotId, prefix: 'slt', guard: isSlotId },
@@ -67,6 +71,13 @@ describe('id factories produce prefixed, well-formed, sortable IDs', () => {
 describe('guards reject malformed and cross-prefix ids', () => {
   it('rejects wrong prefix', () => {
     expect(isPlanId(newUserId())).toBe(false);
+    expect(isProgramId(newPlanId())).toBe(false);
+  });
+
+  it('parseProgramId brands valid ids and rejects invalid ids', () => {
+    const id = newProgramId();
+    expect(parseProgramId(id)).toBe(id);
+    expect(() => parseProgramId('prg_bad')).toThrow('invalid ProgramId: prg_bad');
   });
 
   it('rejects too-short bodies', () => {

@@ -176,6 +176,9 @@ export interface WeeklyPlan {
   readonly variation: 'A' | 'B';
   readonly timeBudget: TimeBudget;
   readonly days: readonly PlanDay[];
+  readonly weekIndex?: number;
+  readonly kind?: 'train' | 'deload' | 'break';
+  readonly loadIndex?: number;
 }
 
 export interface PlanSummary {
@@ -185,12 +188,18 @@ export interface PlanSummary {
   readonly variation: 'A' | 'B';
   readonly isDefault: boolean;
   readonly createdAt: string;
+  readonly programId?: string;
+  readonly programWeekIndex?: number;
+  readonly programKind?: 'train' | 'deload' | 'break';
+  readonly programLoadIndex?: number;
 }
 
 export interface WeekAssignment {
   readonly id: string;
   readonly userId: string;
-  readonly planId: string;
+  readonly planId: string | null;
+  readonly programId?: string;
+  readonly kind: 'train' | 'deload' | 'break';
   readonly weekStart: string;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -198,8 +207,35 @@ export interface WeekAssignment {
 
 export interface WeekResolution {
   readonly weekStart: string;
-  readonly source: 'assigned' | 'default' | null;
+  readonly source: 'assigned' | 'default' | 'break' | null;
+  readonly kind?: 'train' | 'deload' | 'break';
   readonly plan: WeeklyPlan | null;
+}
+
+export interface ProgramWeekSummary {
+  readonly weekStart: string;
+  readonly kind: 'train' | 'deload' | 'break';
+  readonly loadIndex: number;
+  readonly planId: string | null;
+  readonly programWeekIndex?: number;
+}
+
+export interface ProgramSummary {
+  readonly id: string;
+  readonly userId: string;
+  readonly startWeek: string;
+  readonly weekCount: number;
+  readonly input: GeneratePlanRequest & { startWeek: string; weeks: number; curve?: ProgramCurve };
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly weeks: readonly ProgramWeekSummary[];
+}
+
+export interface ProgramCurve {
+  readonly weeklyIncrement: number;
+  readonly deloadEvery: number;
+  readonly deloadLoadIndex: number;
+  readonly maxAcwr: number;
 }
 
 export interface SlotProgress {
@@ -298,4 +334,10 @@ export interface GeneratePlanRequest {
   readonly days: DaySpecInput[];
   readonly variation: 'A' | 'B';
   readonly seed?: number;
+}
+
+export interface CreateProgramRequest extends GeneratePlanRequest {
+  readonly startWeek: string;
+  readonly weeks: number;
+  readonly curve?: Partial<ProgramCurve>;
 }

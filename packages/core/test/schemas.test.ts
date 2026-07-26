@@ -10,6 +10,9 @@ import {
   GeneratePlanInputSchema,
   LoginInputSchema,
   PlanIdSchema,
+  ProgramCurveConfigSchema,
+  ProgramGenerationInputSchema,
+  ProgramWeekKindSchema,
   RegisterInputSchema,
   RepSchemeSchema,
   RoleSchema,
@@ -38,6 +41,47 @@ describe('calendar week helpers', () => {
   it('returns the UTC Monday for dates throughout the week', () => {
     expect(startOfIsoWeek(new Date('2026-07-06T00:00:00Z'))).toBe('2026-07-06');
     expect(startOfIsoWeek(new Date('2026-07-12T23:59:00Z'))).toBe('2026-07-06');
+  });
+});
+
+describe('program schemas', () => {
+  it('accepts and defaults the program curve', () => {
+    const curve = ProgramCurveConfigSchema.parse({});
+    expect(curve).toEqual({
+      weeklyIncrement: 0.05,
+      deloadEvery: 4,
+      deloadLoadIndex: 0.6,
+      maxAcwr: 1.3,
+    });
+    expect(ProgramWeekKindSchema.options).toEqual(['train', 'deload', 'break']);
+  });
+
+  it('extends weekly generation input with a Monday start and bounded weeks', () => {
+    const input = ProgramGenerationInputSchema.parse({
+      startWeek: '2026-07-06',
+      weeks: 4,
+      goal: 'recomp',
+      days: [{ weekday: 'mon', sessions: [] }],
+    });
+    expect(input.startWeek).toBe('2026-07-06');
+    expect(input.weeks).toBe(4);
+    expect(input.curve).toBeUndefined();
+    expect(
+      ProgramGenerationInputSchema.safeParse({
+        startWeek: '2026-07-07',
+        weeks: 4,
+        goal: 'recomp',
+        days: [{ weekday: 'mon', sessions: [] }],
+      }).success,
+    ).toBe(false);
+    expect(
+      ProgramGenerationInputSchema.safeParse({
+        startWeek: '2026-07-06',
+        weeks: 17,
+        goal: 'recomp',
+        days: [{ weekday: 'mon', sessions: [] }],
+      }).success,
+    ).toBe(false);
   });
 });
 
