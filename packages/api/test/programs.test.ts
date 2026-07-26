@@ -168,6 +168,11 @@ describe('program API', () => {
     expect(
       current.program.weeks.find((week) => week.weekStart === '2026-08-10')?.loadIndex,
     ).toBeLessThan(1.1);
+    expect(
+      current.program.weeks
+        .filter((week) => week.kind === 'train')
+        .every((week) => week.loadIndex > 0),
+    ).toBe(true);
   });
 
   it('deletes an owned program and its materialized weeks', async () => {

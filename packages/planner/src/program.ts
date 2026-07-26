@@ -285,7 +285,10 @@ export const replanProgram = ({ program, breakWeeks, todayWeek }: ReplanInput): 
           ? 1 + (baselineIndex % curve.deloadEvery) * curve.weeklyIncrement
           : baseline.loadIndex;
       const template = program.basePlan;
-      const loadIndex = capIndex(template, 1, target, previousLoads, curve.maxAcwr);
+      const loadIndex = Math.max(
+        curve.deloadLoadIndex,
+        capIndex(template, 1, target, previousLoads, curve.maxAcwr),
+      );
       const scaled = scalePlanLoad(template, loadIndex);
       const plan = withMetadata(
         rekeyPlanIds(scaled, baseline.plan as WeeklyPlan),

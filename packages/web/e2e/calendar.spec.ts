@@ -74,6 +74,12 @@ test('generates a program, replans a break week, and restores it when unmarked',
   await expect(page.getByTestId('generate')).toContainText('Generate 3-week program');
   await page.getByTestId('generate').click();
   await expect(page.getByTestId('calendar')).toBeVisible();
+  const programCard = page.locator('[data-testid^="calendar-program-"]').first();
+  await expect(programCard).toBeVisible();
+  const programTestId = await programCard.getAttribute('data-testid');
+  expect(programTestId).toMatch(/^calendar-program-/);
+  const programId = programTestId?.slice('calendar-program-'.length);
+  expect(programId).toBeTruthy();
 
   const { currentWeek, nextWeek, followingWeek, afterProgramWeek } = await page.evaluate(() => {
     const monday = (date: Date): string => {
@@ -110,6 +116,9 @@ test('generates a program, replans a break week, and restores it when unmarked',
   await expect(page.getByTestId(`calendar-load-${followingWeek}`)).toContainText(
     'reduced after break',
   );
+  for (const load of await page.locator('[data-testid^="calendar-load-"]').allTextContents()) {
+    if (load.includes('· train')) expect(load).not.toMatch(/^0%/);
+  }
   const adjustedFollowing = await page.getByTestId(`calendar-load-${followingWeek}`).textContent();
   expect(adjustedFollowing).not.toBe(baselineFollowing);
   await expect(page.locator('.calendar-plan').filter({ hasText: 'Clear default' })).toHaveCount(1);
@@ -122,4 +131,9 @@ test('generates a program, replans a break week, and restores it when unmarked',
   );
   await expect(page.locator('.calendar-plan').filter({ hasText: 'Clear default' })).toHaveCount(1);
   await expect(page.getByTestId(`calendar-week-${afterProgramWeek}`)).toContainText('default');
+
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.getByTestId(`calendar-delete-program-${programId}`).click();
+  await expect(programCard).toHaveCount(0);
+  await expect(page.getByTestId(`calendar-load-${currentWeek}`)).toHaveCount(0);
 });

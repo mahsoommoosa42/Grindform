@@ -185,6 +185,23 @@ describe('program replanning', () => {
     ).toBeLessThanOrEqual(1.3);
   });
 
+  it('never caps a returning training week below the deload floor', () => {
+    const program = generateProgram(input({ weeks: 5 }));
+    const replanned = replanProgram({
+      program,
+      breakWeeks: ['2026-07-20', '2026-07-27'],
+      todayWeek: '2026-07-13',
+    });
+    expect(
+      replanned.weeks
+        .filter((week) => week.kind === 'train')
+        .every((week) => week.loadIndex >= (program.input.curve?.deloadLoadIndex ?? 0.6)),
+    ).toBe(true);
+    expect(
+      replanned.weeks.filter((week) => week.kind === 'train').some((week) => week.loadIndex === 0),
+    ).toBe(false);
+  });
+
   it('retains conditioning when a deload week is later scaled back up', () => {
     const program = generateProgram(input({ weeks: 4 }));
     const deload = program.weeks[3]?.plan;

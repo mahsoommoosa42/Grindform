@@ -838,6 +838,23 @@ export class GfApp extends LitElement {
     }
   }
 
+  private async deleteCalendarProgram(programId: string): Promise<void> {
+    const confirmed =
+      typeof window === 'undefined'
+        ? true
+        : window.confirm('Delete this program and all of its weeks?');
+    if (!confirmed) return;
+    this.calendarBusy = true;
+    try {
+      await api.deleteProgram(programId);
+      await this.openCalendar();
+    } catch (err) {
+      this.error = err instanceof ApiError ? err.message : 'Could not delete this program.';
+    } finally {
+      this.calendarBusy = false;
+    }
+  }
+
   private closeCalendarMenu(): void {
     this.calendarMenuWeek = null;
     this.calendarMenuIndex = 0;
@@ -2831,6 +2848,26 @@ export class GfApp extends LitElement {
                   : html`<button class="link" @click=${() => void this.makeDefault(plan.id)}>
                       Set as default
                     </button>`}
+              </div>
+            `,
+          )}
+        </div>
+        <div class="calendar-plans">
+          <h2>Your programs</h2>
+          ${this.calendarPrograms.map(
+            (program) => html`
+              <div class="calendar-plan" data-testid=${`calendar-program-${program.id}`}>
+                <span
+                  >${program.weekCount}-week program from
+                  ${formatWeekRange(program.startWeek)}</span
+                >
+                <button
+                  class="link"
+                  data-testid=${`calendar-delete-program-${program.id}`}
+                  @click=${() => void this.deleteCalendarProgram(program.id)}
+                >
+                  Delete program
+                </button>
               </div>
             `,
           )}
