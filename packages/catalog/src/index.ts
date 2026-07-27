@@ -5,13 +5,14 @@
  * read/filter helpers over it.
  */
 
-export type { Exercise } from './types.ts';
+export type { Exercise, LiftGroup } from './types.ts';
 export { EXERCISES } from './exercises.ts';
 export {
   allExercises,
   exercisesForMuscle,
   filterExercises,
   getExercise,
+  getLiftGroup,
   meetsExperience,
   requireExercise,
 } from './query.ts';

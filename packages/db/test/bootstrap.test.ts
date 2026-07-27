@@ -4,7 +4,7 @@ import { MIGRATIONS } from '../src/bootstrap.ts';
 
 describe('MIGRATIONS', () => {
   it('exposes the ordered migrations with non-empty SQL', () => {
-    expect(MIGRATIONS).toHaveLength(7);
+    expect(MIGRATIONS).toHaveLength(8);
     expect(MIGRATIONS[0]?.name).toBe('0000_initial');
     expect(MIGRATIONS[0]?.sqlText).toContain('CREATE TABLE plans');
     expect(MIGRATIONS[1]?.name).toBe('0001_auth');
@@ -15,5 +15,7 @@ describe('MIGRATIONS', () => {
     expect(MIGRATIONS[3]?.sqlText).toContain('email_verified');
     expect(MIGRATIONS[4]?.name).toBe('0004_custom_exercises');
     expect(MIGRATIONS[4]?.sqlText).toContain('CREATE TABLE custom_exercises');
+    expect(MIGRATIONS[7]?.name).toBe('0007_personal_records');
+    expect(MIGRATIONS[7]?.sqlText).toContain('CREATE TABLE personal_records');
   });
 });

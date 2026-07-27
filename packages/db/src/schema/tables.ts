@@ -15,6 +15,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -32,6 +33,7 @@ import type {
   Experience,
   Goal,
   LogId,
+  Lift,
   MuscleGroup,
   PlanId,
   ProgramId,
@@ -209,3 +211,23 @@ export const settings = pgTable('settings', {
   preferences: jsonb('preferences').notNull().$type<Record<string, unknown>>(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** One user-entered canonical-lift personal record. */
+export const personalRecords = pgTable(
+  'personal_records',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' })
+      .$type<UserId>(),
+    lift: text('lift').notNull().$type<Lift>(),
+    weightKg: doublePrecision('weight_kg').notNull(),
+    reps: integer('reps').notNull(),
+    oneRepMaxKg: doublePrecision('one_rep_max_kg').notNull(),
+    achievedOn: date('achieved_on', { mode: 'string' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    userLiftPrimaryKey: primaryKey({ columns: [table.userId, table.lift] }),
+  }),
+);

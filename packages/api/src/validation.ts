@@ -23,6 +23,7 @@ import {
   isPlanId,
   isPlanSessionId,
   isSlotId,
+  LiftSchema,
   MovementPatternSchema,
   MuscleGroupSchema,
   RepSchemeSchema,
@@ -218,3 +219,13 @@ export const SettingsBodySchema = z.object({
       message: `preferences may not exceed ${MAX_PREFERENCE_BYTES} bytes`,
     }),
 });
+
+/** Body for replacing one canonical-lift personal record. */
+export const PersonalRecordBodySchema = z.object({
+  weightKg: z.number().finite().gt(0),
+  reps: z.number().int().min(1),
+  achievedOn: z.string().date().optional(),
+});
+
+/** A canonical-lift path parameter. */
+export const LiftParamSchema = LiftSchema;

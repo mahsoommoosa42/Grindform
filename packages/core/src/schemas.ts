@@ -105,6 +105,50 @@ export type MovementPattern = z.infer<typeof MovementPatternSchema>;
 export const ExerciseRoleSchema = z.enum(['main', 'accessory', 'conditioning', 'mobility']);
 export type ExerciseRole = z.infer<typeof ExerciseRoleSchema>;
 
+/** Canonical barbell lifts used for personal-record strength profiles. */
+export const LiftSchema = z.enum([
+  'back_squat',
+  'bench_press',
+  'deadlift',
+  'overhead_press',
+  'barbell_row',
+]);
+export type Lift = z.infer<typeof LiftSchema>;
+
+/** A user-entered recent set from which a personal-record 1RM is derived. */
+export const PersonalRecordInputSchema = z.object({
+  lift: LiftSchema,
+  weightKg: z.number().finite().gt(0),
+  reps: z.number().int().min(1),
+  achievedOn: z.string().date().optional(),
+});
+export type PersonalRecordInput = z.infer<typeof PersonalRecordInputSchema>;
+
+/** A persisted personal record, including its derived one-rep max. */
+export const PersonalRecordSchema = PersonalRecordInputSchema.extend({
+  oneRepMaxKg: z.number().finite().gt(0),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+export type PersonalRecord = z.infer<typeof PersonalRecordSchema>;
+
+/** A resolved canonical-lift max, measured directly or estimated from others. */
+export const StrengthProfileEntrySchema = z.object({
+  lift: LiftSchema,
+  oneRepMaxKg: z.number().finite().gt(0),
+  source: z.enum(['measured', 'estimated']),
+});
+export type StrengthProfileEntry = z.infer<typeof StrengthProfileEntrySchema>;
+
+/** The complete five-lift strength profile. */
+export const StrengthProfileSchema = z
+  .array(StrengthProfileEntrySchema)
+  .length(LiftSchema.options.length)
+  .refine(
+    (entries) => new Set(entries.map((entry) => entry.lift)).size === LiftSchema.options.length,
+    { message: 'strength profile must contain each lift exactly once' },
+  );
+export type StrengthProfile = z.infer<typeof StrengthProfileSchema>;
+
 // ---------------------------------------------------------------------------
 // Custom exercises (user-authored).
 // ---------------------------------------------------------------------------

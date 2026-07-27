@@ -9,13 +9,17 @@ import {
   ExerciseSlugSchema,
   GeneratePlanInputSchema,
   LoginInputSchema,
+  LiftSchema,
   PlanIdSchema,
+  PersonalRecordInputSchema,
+  PersonalRecordSchema,
   ProgramCurveConfigSchema,
   ProgramGenerationInputSchema,
   ProgramWeekKindSchema,
   RegisterInputSchema,
   RepSchemeSchema,
   RoleSchema,
+  StrengthProfileSchema,
   TimeBudgetSchema,
   WEEKDAYS,
   WeekStartSchema,
@@ -27,6 +31,77 @@ describe('enums', () => {
     expect(WEEKDAYS).toHaveLength(7);
     expect(WEEKDAYS[0]).toBe('mon');
     expect(WEEKDAYS[6]).toBe('sun');
+  });
+
+  it('defines the canonical personal-record lifts', () => {
+    expect(LiftSchema.options).toEqual([
+      'back_squat',
+      'bench_press',
+      'deadlift',
+      'overhead_press',
+      'barbell_row',
+    ]);
+  });
+});
+
+describe('personal-record schemas', () => {
+  it('accepts a rep max and persisted derived record', () => {
+    const input = PersonalRecordInputSchema.parse({
+      lift: 'bench_press',
+      weightKg: 80,
+      reps: 3,
+      achievedOn: '2026-01-02',
+    });
+    expect(input.weightKg).toBe(80);
+    expect(
+      PersonalRecordSchema.parse({
+        ...input,
+        oneRepMaxKg: 88,
+        updatedAt: '2026-01-02T00:00:00.000Z',
+      }).oneRepMaxKg,
+    ).toBe(88);
+  });
+
+  it('rejects invalid weights, reps, dates, and persisted timestamps', () => {
+    expect(
+      PersonalRecordInputSchema.safeParse({ lift: 'bench_press', weightKg: 0, reps: 1 }).success,
+    ).toBe(false);
+    expect(
+      PersonalRecordInputSchema.safeParse({ lift: 'bench_press', weightKg: 80, reps: 1.5 }).success,
+    ).toBe(false);
+    expect(
+      PersonalRecordInputSchema.safeParse({
+        lift: 'bench_press',
+        weightKg: 80,
+        reps: 1,
+        achievedOn: 'yesterday',
+      }).success,
+    ).toBe(false);
+    expect(
+      PersonalRecordSchema.safeParse({
+        lift: 'bench_press',
+        weightKg: 80,
+        reps: 1,
+        oneRepMaxKg: 80,
+        updatedAt: 'yesterday',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('validates a complete strength profile', () => {
+    const entries = LiftSchema.options.map((lift) => ({
+      lift,
+      oneRepMaxKg: 100,
+      source: 'estimated' as const,
+    }));
+    expect(StrengthProfileSchema.parse(entries)).toHaveLength(5);
+    expect(StrengthProfileSchema.safeParse(entries.slice(0, 4)).success).toBe(false);
+    expect(
+      StrengthProfileSchema.safeParse([
+        ...entries.slice(0, 4),
+        { ...entries[0]!, lift: 'bench_press' },
+      ]).success,
+    ).toBe(false);
   });
 });
 

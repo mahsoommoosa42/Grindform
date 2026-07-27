@@ -11,3 +11,5 @@ export { GOAL_PROFILES, loadGoalForGoal, prescribeLoad, profileForGoal } from '.
 export type { GoalProfile, LoadGoal, PrescribeInput, Prescription } from './prescribe.ts';
 export { expandSets } from './sets.ts';
 export type { ExpandSetsInput, PlannedSet, SetKind } from './sets.ts';
+export { LIFT_RATIOS, oneRepMaxForExercise, resolveStrengthProfile } from './strength-profile.ts';
+export type { LiftGroupReference, MeasuredLiftMax } from './strength-profile.ts';

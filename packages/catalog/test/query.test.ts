@@ -7,6 +7,7 @@ import {
   exercisesForMuscle,
   filterExercises,
   getExercise,
+  getLiftGroup,
   meetsExperience,
   requireExercise,
 } from '../src/query.ts';
@@ -23,6 +24,14 @@ describe('lookups', () => {
 
   it('getExercise returns undefined for an unknown slug', () => {
     expect(getExercise(parseExerciseSlug('not-a-real-move'))).toBeUndefined();
+  });
+
+  it('gets canonical lift mappings for annotated exercises only', () => {
+    expect(getLiftGroup(parseExerciseSlug('back-squat'))).toEqual({
+      lift: 'back_squat',
+      coefficient: 1,
+    });
+    expect(getLiftGroup(parseExerciseSlug('cable-fly'))).toBeUndefined();
   });
 
   it('requireExercise returns a known exercise', () => {
