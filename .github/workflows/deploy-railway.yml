@@ -94,16 +94,16 @@ jobs:
         run: npm install --global @railway/cli
 
       - name: Link Railway project
+        shell: bash
         run: |
-          unset RAILWAY_TOKEN
           railway link \
             --project "${RAILWAY_PROJECT_ID}" \
             --environment "${RAILWAY_ENVIRONMENT}" \
             --service "${RAILWAY_SERVICE}"
 
       - name: Deploy to Railway
+        shell: bash
         run: |
-          unset RAILWAY_TOKEN
           railway up \
             --project "${RAILWAY_PROJECT_ID}" \
             --environment "${RAILWAY_ENVIRONMENT}" \
