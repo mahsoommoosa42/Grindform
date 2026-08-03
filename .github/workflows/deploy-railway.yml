@@ -69,8 +69,11 @@ jobs:
     needs: quality
     runs-on: ubuntu-latest
     env:
-      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       HEALTHCHECK_URL: ${{ inputs.healthcheck_url || vars.RAILWAY_HEALTHCHECK_URL }}
+      RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID || '574e5059-5352-4479-a78f-1831de33a4b8' }}
+      RAILWAY_ENVIRONMENT: ${{ vars.RAILWAY_ENVIRONMENT || 'production' }}
+      RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE || 'grindform-web' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -78,7 +81,7 @@ jobs:
       - name: Check deployment configuration
         shell: bash
         run: |
-          if [[ -z "${RAILWAY_TOKEN}" ]]; then
+          if [[ -z "${RAILWAY_API_TOKEN}" ]]; then
             echo "::error::RAILWAY_TOKEN is not configured in GitHub Actions secrets."
             exit 1
           fi
@@ -90,8 +93,22 @@ jobs:
       - name: Install Railway CLI
         run: npm install --global @railway/cli
 
+      - name: Link Railway project
+        shell: bash
+        run: |
+          railway link \
+            --project "${RAILWAY_PROJECT_ID}" \
+            --environment "${RAILWAY_ENVIRONMENT}" \
+            --service "${RAILWAY_SERVICE}"
+
       - name: Deploy to Railway
-        run: railway up --service grindform-web --ci
+        shell: bash
+        run: |
+          railway up \
+            --project "${RAILWAY_PROJECT_ID}" \
+            --environment "${RAILWAY_ENVIRONMENT}" \
+            --service "${RAILWAY_SERVICE}" \
+            --ci
 
       - name: Wait for health check
         shell: bash

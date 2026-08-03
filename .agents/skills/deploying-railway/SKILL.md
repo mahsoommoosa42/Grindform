@@ -17,6 +17,20 @@ PGlite) built from the repo `Dockerfile`. `railway.json` pins `builder: DOCKERFI
   export RAILWAY_API_TOKEN="$RAILWAY_TOKEN"; unset RAILWAY_TOKEN
   railway whoami   # should print the account email
   ```
+- Account/workspace tokens do not provide project context. For CI or other
+  non-interactive deployments, link the project, environment, and service explicitly
+  before deploying:
+  ```bash
+  railway link \
+    --project 574e5059-5352-4479-a78f-1831de33a4b8 \
+    --environment production \
+    --service grindform-web
+  railway up \
+    --project 574e5059-5352-4479-a78f-1831de33a4b8 \
+    --environment production \
+    --service grindform-web \
+    --ci
+  ```
 - `GRINDFORM_ADMIN_EMAIL` / `GRINDFORM_ADMIN_PASSWORD` — set as Railway service variables;
   the server bootstraps/promotes this admin at startup.
 
