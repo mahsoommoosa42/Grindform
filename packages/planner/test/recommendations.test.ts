@@ -75,6 +75,21 @@ describe('deriveSessionRecommendations', () => {
     expect(main?.recommendations).toBeUndefined();
   });
 
+  it('prioritizes advertised focus for a single cooldown drill', () => {
+    const [, , cooldown] = deriveSessionRecommendations(
+      [
+        block('warmup', 0),
+        block('main', 20, [slot('back-squat', ['quads']), slot('barbell-hip-thrust', ['glutes'])]),
+        block('cooldown', 5, [
+          slot('back-squat', ['quads']),
+          slot('barbell-hip-thrust', ['glutes']),
+        ]),
+      ],
+      ['glutes', 'core'],
+    );
+    expect(cooldown?.recommendations?.map((item) => item.name)).toEqual(['Figure-four stretch']);
+  });
+
   it('handles zero-minute and slotless blocks without creating empty fields', () => {
     const [warmup, cooldown] = deriveSessionRecommendations([
       block('warmup', 0, [], [{ name: 'Old', dose: '1', reason: 'old' }]),

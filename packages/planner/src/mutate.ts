@@ -60,7 +60,7 @@ const withBlockMinutes = (block: SessionBlock): SessionBlock =>
 /** Re-sum a session's minutes from its (already re-rolled) blocks. */
 const withSessionMinutes = (session: TrainingSession): TrainingSession => ({
   ...session,
-  blocks: deriveSessionRecommendations(session.blocks),
+  blocks: deriveSessionRecommendations(session.blocks, session.focus),
   estMinutes: session.blocks.reduce((acc, b) => acc + b.estMinutes, 0),
 });
 
