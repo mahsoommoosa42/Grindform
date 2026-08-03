@@ -143,6 +143,15 @@ describe('program generation and scaling', () => {
         .some((slot) => slot.scheme.sets < 1),
     ).toBe(false);
     expect(scaled.days.every((day) => day.estMinutes >= 0)).toBe(true);
+    const originalWarmup = original?.days
+      .flatMap((day) => day.sessions)
+      .flatMap((session) => (session.kind === 'training' ? session.blocks : []))
+      .find((block) => block.type === 'warmup')?.recommendations;
+    const scaledWarmup = scaled.days
+      .flatMap((day) => day.sessions)
+      .flatMap((session) => (session.kind === 'training' ? session.blocks : []))
+      .find((block) => block.type === 'warmup')?.recommendations;
+    expect(scaledWarmup).toEqual(originalWarmup);
   });
 });
 
@@ -183,6 +192,13 @@ describe('program replanning', () => {
     expect(
       acuteChronicRatio(loads[breakIndex + 1] as number, loads.slice(0, breakIndex + 1)),
     ).toBeLessThanOrEqual(1.3);
+    expect(
+      returning?.plan?.days
+        .flatMap((day) => day.sessions)
+        .filter((session) => session.kind === 'training')
+        .flatMap((session) => session.blocks)
+        .find((block) => block.type === 'warmup')?.recommendations?.length,
+    ).toBeGreaterThan(0);
   });
 
   it('never caps a returning training week below the deload floor', () => {

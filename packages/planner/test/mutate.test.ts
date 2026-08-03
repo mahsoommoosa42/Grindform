@@ -147,6 +147,21 @@ describe('swapSlotExercise', () => {
     const d = day([training([block('main', [buildSlot('build_muscle', squat)])])]);
     expect(swapSlotExercise(d, newSlotId(), curl)).toBeUndefined();
   });
+
+  it('refreshes preparation and recovery recommendations after a swap', () => {
+    const original = buildSlot('build_muscle', squat);
+    const d = day([
+      training([block('warmup', []), block('main', [original]), block('cooldown', [])]),
+    ]);
+    const next = swapSlotExercise(d, original.id, curl);
+    const session = next?.sessions[0] as TrainingSession;
+    expect(session.blocks.find((b) => b.type === 'warmup')?.recommendations?.[0]?.name).toBe(
+      'Dynamic arm circles',
+    );
+    expect(session.blocks.find((b) => b.type === 'cooldown')?.recommendations?.[0]?.name).toBe(
+      'Biceps wall stretch',
+    );
+  });
 });
 
 describe('addSlotToSession', () => {

@@ -32,6 +32,13 @@ export interface SupersetRef {
   readonly order: number;
 }
 
+/** A non-prescription drill recommendation shown inside a session block. */
+export interface DrillRecommendation {
+  readonly name: string;
+  readonly dose: string;
+  readonly reason: string;
+}
+
 /** One exercise prescription inside a session block. */
 export interface ExerciseSlot {
   readonly id: SlotId;
@@ -61,6 +68,7 @@ export interface SessionBlock {
   readonly estMinutes: number;
   readonly slots: readonly ExerciseSlot[];
   readonly note?: string;
+  readonly recommendations?: readonly DrillRecommendation[];
 }
 
 /**
