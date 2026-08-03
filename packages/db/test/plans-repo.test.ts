@@ -77,6 +77,8 @@ describe('plans-repo', () => {
     if (mon?.kind === 'training') {
       expect(mon.label).toBe('Glute day');
       expect(mon.blocks.length).toBeGreaterThan(0);
+      expect(mon.blocks.find((block) => block.type === 'warmup')?.recommendations).toBeDefined();
+      expect(mon.blocks.find((block) => block.type === 'cooldown')?.recommendations).toBeDefined();
     }
     // Tuesday is an external Pilates session.
     const tue = loaded?.days[1]?.sessions[0];
@@ -90,6 +92,27 @@ describe('plans-repo', () => {
     expect(loaded?.days[2]?.sessions).toHaveLength(2);
     expect(loaded?.days[2]?.sessions[0]?.kind).toBe('training');
     expect(loaded?.days[2]?.sessions[1]?.kind).toBe('external');
+  });
+
+  it('loads older session JSON without recommendation fields', async () => {
+    const userId = newUserId();
+    const plan = makePlan();
+    await createPlan(db, userId, plan);
+    const loaded = await getPlan(db, plan.id);
+    const sessions = loaded!.days[0]!.sessions.map((session) =>
+      session.kind === 'training'
+        ? {
+            ...session,
+            blocks: session.blocks.map(({ recommendations: _old, ...block }) => block),
+          }
+        : session,
+    );
+    await updateDaySessions(db, loaded!.days[0]!.id, userId, sessions, loaded!.days[0]!.estMinutes);
+    const old = await getPlan(db, plan.id);
+    const training = old!.days[0]!.sessions[0];
+    if (training?.kind === 'training') {
+      expect(training.blocks.every((block) => block.recommendations === undefined)).toBe(true);
+    }
   });
 
   it('getPlan returns undefined for an unknown id', async () => {

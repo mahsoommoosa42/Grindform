@@ -46,6 +46,7 @@ import type {
   TrainingSession,
   WeeklyPlan,
 } from './types.ts';
+import { deriveSessionRecommendations } from './recommendations.ts';
 
 /** Fraction of working time loosely reserved for the main lift(s). */
 const MAIN_TIME_SHARE = 0.45;
@@ -312,7 +313,9 @@ const buildTrainingSession = (
     });
   }
 
-  const blocks = insertPhysio(core, physioBlock(physioMinutes), physioPosition);
+  const blocks = deriveSessionRecommendations(
+    insertPhysio(core, physioBlock(physioMinutes), physioPosition),
+  );
   const estMinutes = blocks.reduce((acc, b) => acc + b.estMinutes, 0);
   const session: TrainingSession = {
     id: newPlanSessionId(),

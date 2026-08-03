@@ -17,6 +17,7 @@ import { newSlotId } from '@grindform/core';
 import type { ExerciseSlug } from '@grindform/core';
 
 import { estimateSlotMinutes, GOAL_PROFILES, schemeForRole } from './profiles.ts';
+import { deriveSessionRecommendations } from './recommendations.ts';
 import type { ExerciseSlot, PlanDay, PlanSession, SessionBlock, TrainingSession } from './types.ts';
 
 /**
@@ -59,6 +60,7 @@ const withBlockMinutes = (block: SessionBlock): SessionBlock =>
 /** Re-sum a session's minutes from its (already re-rolled) blocks. */
 const withSessionMinutes = (session: TrainingSession): TrainingSession => ({
   ...session,
+  blocks: deriveSessionRecommendations(session.blocks),
   estMinutes: session.blocks.reduce((acc, b) => acc + b.estMinutes, 0),
 });
 
