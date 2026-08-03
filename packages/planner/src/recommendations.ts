@@ -170,30 +170,19 @@ const cooldownRecommendations = (
   return muscles.slice(0, recommendationCount(minutes)).map((muscle) => COOLDOWN_BY_MUSCLE[muscle]);
 };
 
-const withRecommendations = (blocks: readonly SessionBlock[]): readonly SessionBlock[] =>
-  blocks.map((block) => {
-    if (block.type === 'warmup') {
-      const recommendations = warmupRecommendations(blocks, block.estMinutes);
-      return recommendations.length === 0
-        ? (() => {
-            const { recommendations: _old, ...rest } = block;
-            return rest;
-          })()
-        : { ...block, recommendations };
-    }
-    if (block.type === 'cooldown') {
-      const recommendations = cooldownRecommendations(blocks, block.estMinutes);
-      return recommendations.length === 0
-        ? (() => {
-            const { recommendations: _old, ...rest } = block;
-            return rest;
-          })()
-        : { ...block, recommendations };
-    }
-    return block;
-  });
-
 /** Recompute preparation/recovery recommendations from the current slots. */
 export const deriveSessionRecommendations = (
   blocks: readonly SessionBlock[],
-): readonly SessionBlock[] => withRecommendations(blocks);
+): readonly SessionBlock[] =>
+  blocks.map((block) => {
+    const recommendations =
+      block.type === 'warmup'
+        ? warmupRecommendations(blocks, block.estMinutes)
+        : block.type === 'cooldown'
+          ? cooldownRecommendations(blocks, block.estMinutes)
+          : undefined;
+    if (recommendations === undefined) return block;
+    if (recommendations.length > 0) return { ...block, recommendations };
+    const { recommendations: _old, ...rest } = block;
+    return rest;
+  });
