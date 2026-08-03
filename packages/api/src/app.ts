@@ -647,7 +647,7 @@ export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
     const parsedSessions = body.sessions as unknown as PlanDay['sessions'];
     const sessions = parsedSessions.map((session) =>
       session.kind === 'training'
-        ? { ...session, blocks: deriveSessionRecommendations(session.blocks) }
+        ? { ...session, blocks: deriveSessionRecommendations(session.blocks, session.focus) }
         : session,
     );
     const estMinutes = sessions.reduce((sum, s) => sum + s.estMinutes, 0);

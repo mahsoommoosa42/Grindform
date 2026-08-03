@@ -315,6 +315,7 @@ const buildTrainingSession = (
 
   const blocks = deriveSessionRecommendations(
     insertPhysio(core, physioBlock(physioMinutes), physioPosition),
+    spec.focus,
   );
   const estMinutes = blocks.reduce((acc, b) => acc + b.estMinutes, 0);
   const session: TrainingSession = {

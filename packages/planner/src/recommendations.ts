@@ -165,21 +165,26 @@ const warmupRecommendations = (
 const cooldownRecommendations = (
   blocks: readonly SessionBlock[],
   minutes: number,
+  focus: readonly MuscleGroup[],
 ): readonly DrillRecommendation[] => {
   const muscles = unique(slotsIn(blocks).flatMap((slot) => slot.primaryMuscles));
-  return muscles.slice(0, recommendationCount(minutes)).map((muscle) => COOLDOWN_BY_MUSCLE[muscle]);
+  const prioritized = unique([...focus.filter((muscle) => muscles.includes(muscle)), ...muscles]);
+  return prioritized
+    .slice(0, recommendationCount(minutes))
+    .map((muscle) => COOLDOWN_BY_MUSCLE[muscle]);
 };
 
 /** Recompute preparation/recovery recommendations from the current slots. */
 export const deriveSessionRecommendations = (
   blocks: readonly SessionBlock[],
+  focus: readonly MuscleGroup[] = [],
 ): readonly SessionBlock[] =>
   blocks.map((block) => {
     const recommendations =
       block.type === 'warmup'
         ? warmupRecommendations(blocks, block.estMinutes)
         : block.type === 'cooldown'
-          ? cooldownRecommendations(blocks, block.estMinutes)
+          ? cooldownRecommendations(blocks, block.estMinutes, focus)
           : undefined;
     if (recommendations === undefined) return block;
     if (recommendations.length > 0) return { ...block, recommendations };

@@ -163,7 +163,7 @@ const scaleTrainingSession = (session: TrainingSession, loadIndex: number): Trai
     .filter(
       (block) => !(block.type === 'main' || block.type === 'accessory') || block.slots.length > 0,
     );
-  const blocks = deriveSessionRecommendations(scaledBlocks);
+  const blocks = deriveSessionRecommendations(scaledBlocks, session.focus);
   return {
     ...session,
     blocks,
