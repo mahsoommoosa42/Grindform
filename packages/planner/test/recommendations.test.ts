@@ -46,7 +46,6 @@ describe('deriveSessionRecommendations', () => {
       ]),
     ]);
     expect(warmup?.recommendations?.map((item) => item.name)).toEqual([
-      'Dead bug',
       'Bodyweight squat',
       'Hip hinge drill',
     ]);
@@ -73,7 +72,6 @@ describe('deriveSessionRecommendations', () => {
       ]),
     ]);
     expect(warmup?.recommendations?.map((item) => item.name)).toEqual([
-      'Dead bug',
       'Bodyweight squat',
       'Incline push-up',
       'Wall slide',
@@ -94,6 +92,45 @@ describe('deriveSessionRecommendations', () => {
       cooldown?.recommendations?.find((item) => item.name === 'Standing quad stretch')?.dose,
     ).toBe('60 s each side');
     expect(main?.recommendations).toBeUndefined();
+  });
+
+  it('caps seconds and minutes doses at the three-lift ceiling', () => {
+    const [, , cooldown] = deriveSessionRecommendations([
+      block('warmup', 5),
+      block('main', 20, [
+        slot('barbell-hip-thrust', ['glutes']),
+        slot('barbell-hip-thrust', ['glutes']),
+        slot('barbell-hip-thrust', ['glutes']),
+        slot('barbell-hip-thrust', ['glutes']),
+        slot('custom-full-body-a', ['full_body']),
+        slot('custom-full-body-b', ['full_body']),
+        slot('custom-full-body-c', ['full_body']),
+        slot('custom-full-body-d', ['full_body']),
+      ]),
+      block('cooldown', 5),
+    ]);
+    expect(cooldown?.recommendations).toEqual([
+      {
+        name: 'Figure-four stretch',
+        dose: '60 s each side',
+        reason: 'Releases the glutes trained today.',
+      },
+      {
+        name: 'Easy walk',
+        dose: '4 min',
+        reason: 'Brings your heart rate down after full-body work.',
+      },
+    ]);
+  });
+
+  it('suppresses a catalog drill already prescribed that day', () => {
+    const [warmup, , cooldown] = deriveSessionRecommendations([
+      block('warmup', 5),
+      block('main', 20, [slot('dead-bug', ['core'])]),
+      block('cooldown', 5),
+    ]);
+    expect(warmup?.recommendations).toBeUndefined();
+    expect(cooldown?.recommendations?.map((item) => item.name)).toEqual(['Cobra stretch']);
   });
 
   it('prioritizes advertised focus for cooldown ordering', () => {

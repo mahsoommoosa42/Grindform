@@ -5,7 +5,7 @@
  */
 
 import { getExercise } from '@grindform/catalog';
-import type { MuscleGroup, MovementPattern } from '@grindform/core';
+import type { ExerciseSlug, MuscleGroup, MovementPattern } from '@grindform/core';
 
 import type { DrillRecommendation, ExerciseSlot, SessionBlock } from './types.ts';
 
@@ -21,12 +21,14 @@ type DoseSpec =
       readonly kind: 'seconds';
       readonly base: number;
       readonly increment: number;
+      readonly cap: number;
       readonly suffix: string;
     }
   | {
       readonly kind: 'minutes';
       readonly base: number;
       readonly increment: number;
+      readonly cap: number;
       readonly suffix: string;
     };
 
@@ -34,6 +36,7 @@ interface RecommendationTemplate {
   readonly name: string;
   readonly dose: DoseSpec;
   readonly reason: string;
+  readonly exerciseSlug?: ExerciseSlug;
 }
 
 const sets = (reps: string): DoseSpec => ({
@@ -48,6 +51,7 @@ const seconds = (base: number, suffix = ''): DoseSpec => ({
   kind: 'seconds',
   base,
   increment: 15,
+  cap: 3,
   suffix,
 });
 
@@ -55,6 +59,7 @@ const minutes = (base: number, suffix = ''): DoseSpec => ({
   kind: 'minutes',
   base,
   increment: 1,
+  cap: 3,
   suffix,
 });
 
@@ -68,6 +73,7 @@ const WARMUP_BY_PATTERN: Readonly<Record<MovementPattern, RecommendationTemplate
     name: 'Dead bug',
     dose: sets('8 each side'),
     reason: 'Braces and prepares your core for trunk work.',
+    exerciseSlug: 'dead-bug' as ExerciseSlug,
   },
   squat: {
     name: 'Bodyweight squat',
@@ -194,11 +200,15 @@ const liftSlotsIn = (blocks: readonly SessionBlock[]): readonly ExerciseSlot[] =
     .flatMap((block) => block.slots)
     .filter((slot) => getExercise(slot.exerciseSlug)?.role !== 'conditioning');
 
+const prescribedExerciseSlugsIn = (blocks: readonly SessionBlock[]): ReadonlySet<ExerciseSlug> =>
+  new Set(blocks.flatMap((block) => block.slots.map((slot) => slot.exerciseSlug)));
+
 const formatDose = (dose: DoseSpec, liftCount: number): string => {
-  const quantity = dose.base + dose.increment * (liftCount - 1);
+  const cappedLiftCount = Math.min(dose.cap, liftCount);
+  const quantity = dose.base + dose.increment * (cappedLiftCount - 1);
   switch (dose.kind) {
     case 'sets':
-      return `${Math.min(dose.cap, quantity)} × ${dose.reps}`;
+      return `${quantity} × ${dose.reps}`;
     case 'seconds':
       return `${quantity} s${dose.suffix}`;
     case 'minutes':
@@ -209,15 +219,21 @@ const formatDose = (dose: DoseSpec, liftCount: number): string => {
 const recommendationFor = (
   recommendation: RecommendationTemplate,
   liftCount: number,
-): DrillRecommendation => ({
-  name: recommendation.name,
-  dose: formatDose(recommendation.dose, liftCount),
-  reason: recommendation.reason,
-});
+  prescribedExerciseSlugs: ReadonlySet<ExerciseSlug>,
+): DrillRecommendation | undefined =>
+  recommendation.exerciseSlug !== undefined &&
+  prescribedExerciseSlugs.has(recommendation.exerciseSlug)
+    ? undefined
+    : {
+        name: recommendation.name,
+        dose: formatDose(recommendation.dose, liftCount),
+        reason: recommendation.reason,
+      };
 
 const warmupRecommendations = (
   blocks: readonly SessionBlock[],
   timeBudgetMinutes: number,
+  prescribedExerciseSlugs: ReadonlySet<ExerciseSlug>,
 ): readonly DrillRecommendation[] => {
   if (timeBudgetMinutes <= 0) return [];
   const patternCounts = new Map<MovementPattern, number>();
@@ -229,7 +245,9 @@ const warmupRecommendations = (
     const liftCount = patternCounts.get(pattern);
     return liftCount === undefined
       ? []
-      : [recommendationFor(WARMUP_BY_PATTERN[pattern], liftCount)];
+      : [recommendationFor(WARMUP_BY_PATTERN[pattern], liftCount, prescribedExerciseSlugs)].filter(
+          (recommendation): recommendation is DrillRecommendation => recommendation !== undefined,
+        );
   });
 };
 
@@ -237,6 +255,7 @@ const cooldownRecommendations = (
   blocks: readonly SessionBlock[],
   timeBudgetMinutes: number,
   focus: readonly MuscleGroup[],
+  prescribedExerciseSlugs: ReadonlySet<ExerciseSlug>,
 ): readonly DrillRecommendation[] => {
   if (timeBudgetMinutes <= 0) return [];
   const muscleCounts = new Map<MuscleGroup, number>();
@@ -250,25 +269,31 @@ const cooldownRecommendations = (
     ...muscles.filter(([muscle]) => focus.includes(muscle)),
     ...muscles.filter(([muscle]) => !focus.includes(muscle)),
   ];
-  return prioritized.map(([muscle, liftCount]) =>
-    recommendationFor(COOLDOWN_BY_MUSCLE[muscle], liftCount),
-  );
+  return prioritized
+    .map(([muscle, liftCount]) =>
+      recommendationFor(COOLDOWN_BY_MUSCLE[muscle], liftCount, prescribedExerciseSlugs),
+    )
+    .filter(
+      (recommendation): recommendation is DrillRecommendation => recommendation !== undefined,
+    );
 };
 
 /** Recompute preparation/recovery recommendations from the current slots. */
 export const deriveSessionRecommendations = (
   blocks: readonly SessionBlock[],
   focus: readonly MuscleGroup[] = [],
-): readonly SessionBlock[] =>
-  blocks.map((block) => {
+): readonly SessionBlock[] => {
+  const prescribedExerciseSlugs = prescribedExerciseSlugsIn(blocks);
+  return blocks.map((block) => {
     const recommendations =
       block.type === 'warmup'
-        ? warmupRecommendations(blocks, block.estMinutes)
+        ? warmupRecommendations(blocks, block.estMinutes, prescribedExerciseSlugs)
         : block.type === 'cooldown'
-          ? cooldownRecommendations(blocks, block.estMinutes, focus)
+          ? cooldownRecommendations(blocks, block.estMinutes, focus, prescribedExerciseSlugs)
           : undefined;
     if (recommendations === undefined) return block;
     if (recommendations.length > 0) return { ...block, recommendations };
     const { recommendations: _old, ...rest } = block;
     return rest;
   });
+};
