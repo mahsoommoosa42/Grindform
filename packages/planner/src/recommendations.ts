@@ -139,27 +139,44 @@ const WARMUP_ORDER: readonly MovementPattern[] = [
   'isolation',
 ];
 
-const recommendationCount = (minutes: number): number =>
-  minutes <= 0 ? 0 : Math.min(4, Math.max(1, Math.floor(minutes / 3)));
-
 const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
 
-const slotsIn = (blocks: readonly SessionBlock[]): readonly ExerciseSlot[] =>
-  blocks.flatMap((block) => block.slots);
+const liftSlotsIn = (blocks: readonly SessionBlock[]): readonly ExerciseSlot[] =>
+  blocks
+    .filter((block) => block.type === 'main' || block.type === 'accessory')
+    .flatMap((block) => block.slots)
+    .filter((slot) => getExercise(slot.exerciseSlug)?.role !== 'conditioning');
+
+const doseForLiftCount = (recommendation: DrillRecommendation, liftCount: number) => {
+  const sets = recommendation.dose.match(/^2 × (.+)$/);
+  let dose = recommendation.dose;
+  if (sets !== null) {
+    dose = `${Math.min(3, liftCount)} × ${sets[1]}`;
+  } else {
+    const seconds = recommendation.dose.match(/^(\d+) s(.*)$/);
+    if (seconds !== null) {
+      dose = `${Number(seconds[1]) + (liftCount - 1) * 15} s${seconds[2]}`;
+    } else {
+      const minutes = recommendation.dose.match(/^(\d+) min$/);
+      if (minutes !== null) dose = `${Number(minutes[1]) + liftCount - 1} min`;
+    }
+  }
+  return { ...recommendation, dose };
+};
 
 const warmupRecommendations = (
   blocks: readonly SessionBlock[],
   minutes: number,
 ): readonly DrillRecommendation[] => {
-  const patterns = unique(
-    slotsIn(blocks)
-      .map((slot) => getExercise(slot.exerciseSlug)?.pattern)
-      .filter((pattern): pattern is MovementPattern => pattern !== undefined),
+  if (minutes <= 0) return [];
+  const patternCounts = new Map<MovementPattern, number>();
+  for (const slot of liftSlotsIn(blocks)) {
+    const pattern = getExercise(slot.exerciseSlug)?.pattern;
+    if (pattern !== undefined) patternCounts.set(pattern, (patternCounts.get(pattern) ?? 0) + 1);
+  }
+  return WARMUP_ORDER.filter((pattern) => patternCounts.has(pattern)).map((pattern) =>
+    doseForLiftCount(WARMUP_BY_PATTERN[pattern], patternCounts.get(pattern) as number),
   );
-  const ordered = WARMUP_ORDER.filter((pattern) => patterns.includes(pattern));
-  return ordered
-    .slice(0, recommendationCount(minutes))
-    .map((pattern) => WARMUP_BY_PATTERN[pattern]);
 };
 
 const cooldownRecommendations = (
@@ -167,11 +184,18 @@ const cooldownRecommendations = (
   minutes: number,
   focus: readonly MuscleGroup[],
 ): readonly DrillRecommendation[] => {
-  const muscles = unique(slotsIn(blocks).flatMap((slot) => slot.primaryMuscles));
+  if (minutes <= 0) return [];
+  const muscleCounts = new Map<MuscleGroup, number>();
+  for (const slot of liftSlotsIn(blocks)) {
+    for (const muscle of slot.primaryMuscles) {
+      muscleCounts.set(muscle, (muscleCounts.get(muscle) ?? 0) + 1);
+    }
+  }
+  const muscles = [...muscleCounts.keys()];
   const prioritized = unique([...focus.filter((muscle) => muscles.includes(muscle)), ...muscles]);
-  return prioritized
-    .slice(0, recommendationCount(minutes))
-    .map((muscle) => COOLDOWN_BY_MUSCLE[muscle]);
+  return prioritized.map((muscle) =>
+    doseForLiftCount(COOLDOWN_BY_MUSCLE[muscle], muscleCounts.get(muscle) as number),
+  );
 };
 
 /** Recompute preparation/recovery recommendations from the current slots. */
