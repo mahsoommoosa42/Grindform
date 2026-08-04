@@ -94,7 +94,7 @@ describe('plans-repo', () => {
     expect(loaded?.days[2]?.sessions[1]?.kind).toBe('external');
   });
 
-  it('loads older session JSON without recommendation fields', async () => {
+  it('derives recommendations when older session JSON has none', async () => {
     const userId = newUserId();
     const plan = makePlan();
     await createPlan(db, userId, plan);
@@ -111,7 +111,12 @@ describe('plans-repo', () => {
     const old = await getPlan(db, plan.id);
     const training = old!.days[0]!.sessions[0];
     if (training?.kind === 'training') {
-      expect(training.blocks.every((block) => block.recommendations === undefined)).toBe(true);
+      expect(
+        training.blocks.find((block) => block.type === 'warmup')?.recommendations,
+      ).toBeDefined();
+      expect(
+        training.blocks.find((block) => block.type === 'cooldown')?.recommendations,
+      ).toBeDefined();
     }
   });
 

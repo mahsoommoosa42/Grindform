@@ -217,9 +217,9 @@ const recommendationFor = (
 
 const warmupRecommendations = (
   blocks: readonly SessionBlock[],
-  minutes: number,
+  timeBudgetMinutes: number,
 ): readonly DrillRecommendation[] => {
-  if (minutes <= 0) return [];
+  if (timeBudgetMinutes <= 0) return [];
   const patternCounts = new Map<MovementPattern, number>();
   for (const slot of liftSlotsIn(blocks)) {
     const pattern = getExercise(slot.exerciseSlug)?.pattern;
@@ -235,10 +235,10 @@ const warmupRecommendations = (
 
 const cooldownRecommendations = (
   blocks: readonly SessionBlock[],
-  minutes: number,
+  timeBudgetMinutes: number,
   focus: readonly MuscleGroup[],
 ): readonly DrillRecommendation[] => {
-  if (minutes <= 0) return [];
+  if (timeBudgetMinutes <= 0) return [];
   const muscleCounts = new Map<MuscleGroup, number>();
   for (const slot of liftSlotsIn(blocks)) {
     for (const muscle of slot.primaryMuscles) {
