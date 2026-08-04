@@ -85,7 +85,7 @@ export const EXERCISES: readonly Exercise[] = [
   ex({
     slug: 'conventional-deadlift',
     name: 'Conventional deadlift',
-    primaryMuscles: ['hamstrings', 'glutes', 'back'],
+    primaryMuscles: ['hamstrings'],
     secondaryMuscles: ['core'],
     equipment: ['barbell'],
     pattern: 'hinge',
@@ -370,8 +370,8 @@ export const EXERCISES: readonly Exercise[] = [
   ex({
     slug: 'face-pull',
     name: 'Face pull',
-    primaryMuscles: ['back', 'shoulders'],
-    secondaryMuscles: [],
+    primaryMuscles: ['back'],
+    secondaryMuscles: ['shoulders'],
     equipment: ['cable', 'band'],
     pattern: 'horizontal_pull',
     role: 'accessory',
@@ -396,8 +396,8 @@ export const EXERCISES: readonly Exercise[] = [
   ex({
     slug: 'incline-barbell-bench',
     name: 'Incline BB bench',
-    primaryMuscles: ['chest', 'shoulders'],
-    secondaryMuscles: ['triceps'],
+    primaryMuscles: ['chest'],
+    secondaryMuscles: ['triceps', 'shoulders'],
     equipment: ['barbell'],
     pattern: 'horizontal_push',
     role: 'main',
@@ -408,8 +408,8 @@ export const EXERCISES: readonly Exercise[] = [
   ex({
     slug: 'incline-db-press',
     name: 'Incline DB press',
-    primaryMuscles: ['chest', 'shoulders'],
-    secondaryMuscles: ['triceps'],
+    primaryMuscles: ['chest'],
+    secondaryMuscles: ['triceps', 'shoulders'],
     equipment: ['dumbbell'],
     pattern: 'horizontal_push',
     role: 'main',
@@ -718,8 +718,8 @@ export const EXERCISES: readonly Exercise[] = [
   ex({
     slug: 'farmer-carry',
     name: 'Farmer carry',
-    primaryMuscles: ['full_body', 'core'],
-    secondaryMuscles: ['back'],
+    primaryMuscles: ['full_body'],
+    secondaryMuscles: ['back', 'core'],
     equipment: ['dumbbell', 'kettlebell'],
     pattern: 'carry',
     role: 'conditioning',
@@ -730,7 +730,7 @@ export const EXERCISES: readonly Exercise[] = [
   ex({
     slug: 'mountain-climber',
     name: 'Mountain climber',
-    primaryMuscles: ['full_body', 'core'],
+    primaryMuscles: ['core'],
     secondaryMuscles: [],
     equipment: ['bodyweight'],
     pattern: 'conditioning',
