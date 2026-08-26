@@ -18,7 +18,7 @@ import {
   replanProgram,
   scalePlanLoad,
 } from '../src/index.ts';
-import type { ProgramWeek } from '../src/index.ts';
+import type { ExerciseSlot, ProgramWeek, SessionBlock, WeeklyPlan } from '../src/index.ts';
 
 const input = (overrides: Partial<ProgramGenerationInput> = {}): ProgramGenerationInput =>
   ProgramGenerationInputSchema.parse({
@@ -38,6 +38,64 @@ const input = (overrides: Partial<ProgramGenerationInput> = {}): ProgramGenerati
     weeks: 8,
     ...overrides,
   });
+
+const trainingSlots = (plan: WeeklyPlan) =>
+  plan.days
+    .flatMap((day) => day.sessions)
+    .filter((session) => session.kind === 'training')
+    .flatMap((session) => session.blocks)
+    .flatMap((block) => block.slots);
+
+const updateSlot = (
+  plan: WeeklyPlan,
+  predicate: (slot: ExerciseSlot) => boolean,
+  update: (slot: ExerciseSlot) => ExerciseSlot,
+): WeeklyPlan => ({
+  ...plan,
+  days: plan.days.map((day) => ({
+    ...day,
+    sessions: day.sessions.map((session) =>
+      session.kind === 'training'
+        ? {
+            ...session,
+            blocks: session.blocks.map((block) => ({
+              ...block,
+              slots: block.slots.map((slot) => (predicate(slot) ? update(slot) : slot)),
+            })),
+          }
+        : session,
+    ),
+  })),
+});
+
+const updateAccessorySlots = (
+  plan: WeeklyPlan,
+  update: (slots: readonly ExerciseSlot[]) => readonly ExerciseSlot[],
+): WeeklyPlan => ({
+  ...plan,
+  days: plan.days.map((day) => ({
+    ...day,
+    sessions: day.sessions.map((session) =>
+      session.kind === 'training'
+        ? {
+            ...session,
+            blocks: session.blocks.map((block) =>
+              block.type === 'accessory' && block.slots.length > 0
+                ? { ...block, slots: update(block.slots) }
+                : block,
+            ),
+          }
+        : session,
+    ),
+  })),
+});
+
+const planIds = (plan: WeeklyPlan) => ({
+  plan: plan.id,
+  days: plan.days.map((day) => day.id),
+  sessions: plan.days.flatMap((day) => day.sessions.map((session) => session.id)),
+  slots: trainingSlots(plan).map((slot) => slot.id),
+});
 
 describe('planned load primitives', () => {
   it('weights lifting structure and external minutes into unitless load', () => {
@@ -156,6 +214,219 @@ describe('program generation and scaling', () => {
 });
 
 describe('program replanning', () => {
+  it('keeps an unedited replan byte-identical to the generated output', () => {
+    const program = generateProgram(input({ weeks: 3 }));
+    const replanned = replanProgram({
+      program,
+      breakWeeks: [],
+      todayWeek: '2026-07-06',
+    });
+    expect(replanned.weeks).toEqual(program.weeks);
+  });
+
+  it('falls back to the baseline key when a persisted week has no plan', () => {
+    const program = generateProgram(input({ weeks: 2 }));
+    const replanned = replanProgram({
+      program: {
+        ...program,
+        weeks: program.weeks.map((week, index) =>
+          index === 1 ? (({ plan: _plan, ...withoutPlan }) => withoutPlan)(week) : week,
+        ),
+      },
+      breakWeeks: [],
+      todayWeek: '2026-07-06',
+    });
+    expect(replanned.weeks[1]?.plan?.id).toBe(program.baselineWeeks[1]?.plan?.id);
+  });
+
+  it('moves a swapped future selection with its training week index and preserves ids', () => {
+    const program = generateProgram(
+      input({
+        weeks: 3,
+        curve: { ...DEFAULT_PROGRAM_CURVE, maxAcwr: 3 },
+      }),
+    );
+    const original = program.weeks[1]?.plan;
+    expect(original).toBeDefined();
+    const slots = trainingSlots(original as WeeklyPlan);
+    const originalSlot = slots[0];
+    const replacement = slots.find((slot) => slot.exerciseSlug !== originalSlot?.exerciseSlug);
+    expect(originalSlot).toBeDefined();
+    expect(replacement).toBeDefined();
+    const edited = updateSlot(
+      original as WeeklyPlan,
+      (slot) => slot.id === originalSlot?.id,
+      (slot) => ({ ...slot, exerciseSlug: replacement?.exerciseSlug ?? slot.exerciseSlug }),
+    );
+    const stored = {
+      ...program,
+      weeks: program.weeks.map((week, index) => (index === 1 ? { ...week, plan: edited } : week)),
+    };
+    const replanned = replanProgram({
+      program: stored,
+      breakWeeks: ['2026-07-13'],
+      todayWeek: '2026-07-06',
+    });
+    const shifted = replanned.weeks.find((week) => week.weekIndex === 1);
+    expect(shifted?.weekStart).toBe('2026-07-20');
+    expect(trainingSlots(shifted?.plan as WeeklyPlan).map((slot) => slot.exerciseSlug)).toContain(
+      replacement?.exerciseSlug,
+    );
+    expect(planIds(shifted?.plan as WeeklyPlan)).toEqual(planIds(edited));
+  });
+
+  it('preserves added and removed accessory selections', () => {
+    const program = generateProgram(input({ weeks: 3 }));
+    const original = program.weeks[1]?.plan as WeeklyPlan;
+    const accessory = original.days
+      .flatMap((day) => day.sessions)
+      .filter((session) => session.kind === 'training')
+      .flatMap((session) => session.blocks)
+      .filter((block) => block.type === 'accessory')
+      .flatMap((block) => block.slots)[0];
+    expect(accessory).toBeDefined();
+    const added = { ...accessory, id: 'slt_added', exerciseSlug: 'custom-added' } as ExerciseSlot;
+    const edited = updateAccessorySlots(original, (slots) => [...slots, added]);
+    const removed = updateAccessorySlots(original, (slots) =>
+      slots.filter((slot) => slot.id !== accessory?.id),
+    );
+    const stored = {
+      ...program,
+      weeks: program.weeks.map((week, index) =>
+        index === 1 ? { ...week, plan: edited } : index === 2 ? { ...week, plan: removed } : week,
+      ),
+    };
+    const replanned = replanProgram({
+      program: stored,
+      breakWeeks: ['2026-07-13'],
+      todayWeek: '2026-07-06',
+    });
+    const shiftedAdded = replanned.weeks.find((week) => week.weekIndex === 1)?.plan as WeeklyPlan;
+    const shiftedRemoved = replanned.weeks.find((week) => week.weekIndex === 2)?.plan as WeeklyPlan;
+    expect(trainingSlots(shiftedAdded).map((slot) => slot.exerciseSlug)).toContain('custom-added');
+    expect(trainingSlots(shiftedRemoved).map((slot) => slot.id)).not.toContain(accessory?.id);
+  });
+
+  it('restores dropped conditioning for an edited deload template', () => {
+    const program = generateProgram(input({ weeks: 4 }));
+    const deload = program.weeks[3]?.plan as WeeklyPlan;
+    const edited = updateSlot(
+      deload,
+      (slot) => slot.exerciseSlug === trainingSlots(deload)[0]?.exerciseSlug,
+      (slot) => ({
+        ...slot,
+        exerciseSlug: 'edited-deload-slot' as ExerciseSlot['exerciseSlug'],
+      }),
+    );
+    const stored = {
+      ...program,
+      weeks: program.weeks.map((week, index) => (index === 3 ? { ...week, plan: edited } : week)),
+    };
+    const replanned = replanProgram({
+      program: stored,
+      breakWeeks: ['2026-07-27'],
+      todayWeek: '2026-07-06',
+    });
+    const returning = replanned.weeks.find((week) => week.weekIndex === 3)?.plan as WeeklyPlan;
+    expect(trainingSlots(returning).some((slot) => slot.scheme.repsHigh >= 18)).toBe(true);
+  });
+
+  it('does not mis-key a restored conditioning block when block counts differ', () => {
+    const program = generateProgram(input({ weeks: 4 }));
+    const base = program.basePlan;
+    const sourceSlot = trainingSlots(base).find((slot) => slot.scheme.repsHigh >= 18);
+    expect(sourceSlot).toBeDefined();
+    if (sourceSlot === undefined) throw new Error('expected a conditioning slot');
+    const extraBlock: SessionBlock = {
+      type: 'accessory',
+      title: 'Extra finisher',
+      estMinutes: 1,
+      slots: [{ ...sourceSlot, id: 'slt_extra_finisher' } as ExerciseSlot],
+    };
+    const expandedBase: WeeklyPlan = {
+      ...base,
+      days: base.days.map((day) => ({
+        ...day,
+        sessions: day.sessions.map((session) =>
+          session.kind === 'training'
+            ? { ...session, blocks: [...session.blocks, extraBlock] }
+            : session,
+        ),
+      })),
+    };
+    const persistedDeload = program.weeks[3]?.plan as WeeklyPlan;
+    const editedPersistedDeload = updateSlot(
+      persistedDeload,
+      (slot) => slot.id === trainingSlots(persistedDeload)[0]?.id,
+      (slot) => ({
+        ...slot,
+        exerciseSlug: 'edited-deload-block' as ExerciseSlot['exerciseSlug'],
+      }),
+    );
+    const replanned = replanProgram({
+      program: {
+        ...program,
+        basePlan: expandedBase,
+        weeks: program.weeks.map((week, index) =>
+          index === 3 ? { ...week, plan: editedPersistedDeload } : week,
+        ),
+      },
+      breakWeeks: ['2026-07-27'],
+      todayWeek: '2026-07-06',
+    });
+    const returning = replanned.weeks.find((week) => week.weekIndex === 3)?.plan as WeeklyPlan;
+    expect(trainingSlots(returning).some((slot) => slot.id === 'slt_extra_finisher')).toBe(true);
+  });
+
+  it('does not restore a finisher deliberately removed at full load', () => {
+    const program = generateProgram(input({ weeks: 2 }));
+    const full = program.weeks[0]?.plan as WeeklyPlan;
+    const finisher = trainingSlots(full).find((slot) => slot.scheme.repsHigh >= 18);
+    expect(finisher).toBeDefined();
+    const removed = updateAccessorySlots(full, (slots) =>
+      slots.filter((slot) => slot.id !== finisher?.id),
+    );
+    const replanned = replanProgram({
+      program: {
+        ...program,
+        weeks: program.weeks.map((week, index) =>
+          index === 0 ? { ...week, plan: removed } : week,
+        ),
+      },
+      breakWeeks: ['2026-07-13'],
+      todayWeek: '2026-07-06',
+    });
+    expect(
+      trainingSlots(replanned.weeks[0]?.plan as WeeklyPlan).map((slot) => slot.id),
+    ).not.toContain(finisher?.id);
+  });
+
+  it('caps edited re-entry load without crossing the deload floor', () => {
+    const program = generateProgram(input({ weeks: 6 }));
+    const original = program.weeks[2]?.plan as WeeklyPlan;
+    const edited = updateSlot(
+      original,
+      (slot) => slot.id === trainingSlots(original)[0]?.id,
+      (slot) => ({
+        ...slot,
+        exerciseSlug: 'edited-reentry-slot' as ExerciseSlot['exerciseSlug'],
+      }),
+    );
+    const replanned = replanProgram({
+      program: {
+        ...program,
+        weeks: program.weeks.map((week, index) => (index === 2 ? { ...week, plan: edited } : week)),
+      },
+      breakWeeks: ['2026-07-20'],
+      todayWeek: '2026-07-06',
+    });
+    const returning = replanned.weeks.find((week) => week.weekIndex === 2);
+    expect(returning?.loadIndex).toBeLessThanOrEqual(1.15);
+    expect(returning?.loadIndex).toBeGreaterThanOrEqual(
+      program.input.curve?.deloadLoadIndex ?? DEFAULT_PROGRAM_CURVE.deloadLoadIndex,
+    );
+  });
+
   it('is idempotent, shifts after a break, and keeps past weeks immutable', () => {
     const program = generateProgram(input());
     const breakWeek = '2026-07-27';

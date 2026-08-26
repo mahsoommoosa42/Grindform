@@ -857,6 +857,7 @@ export class GfApp extends LitElement {
         await api.markProgramBreak(programId, weekStart);
       }
       await this.openCalendar();
+      await this.loadResolvedWeek(this.weekStart);
     } catch (err) {
       this.error = err instanceof ApiError ? err.message : 'Could not update the break week.';
     } finally {

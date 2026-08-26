@@ -102,6 +102,18 @@ const clonePlanIds = (plan: WeeklyPlan): WeeklyPlan => ({
   })),
 });
 
+const blockOrdinal = (blocks: readonly SessionBlock[], index: number): number =>
+  blocks.slice(0, index).filter((candidate) => candidate.type === blocks[index]?.type).length;
+
+const blockWithKey = (
+  blocks: readonly SessionBlock[],
+  block: SessionBlock,
+  ordinal: number,
+): SessionBlock | undefined =>
+  blocks.find(
+    (candidate, index) => candidate.type === block.type && blockOrdinal(blocks, index) === ordinal,
+  );
+
 const rekeyPlanIds = (plan: WeeklyPlan, key: WeeklyPlan): WeeklyPlan => ({
   ...plan,
   id: key.id,
@@ -118,7 +130,11 @@ const rekeyPlanIds = (plan: WeeklyPlan, key: WeeklyPlan): WeeklyPlan => ({
           ...(session.kind === 'training'
             ? {
                 blocks: session.blocks.map((block, blockIndex) => {
-                  const keyBlock = (keySession as TrainingSession).blocks[blockIndex];
+                  const keyBlock = blockWithKey(
+                    (keySession as TrainingSession).blocks,
+                    block,
+                    blockOrdinal(session.blocks, blockIndex),
+                  );
                   return {
                     ...block,
                     slots: block.slots.map((slot, slotIndex) => {
@@ -170,6 +186,84 @@ const scaleTrainingSession = (session: TrainingSession, loadIndex: number): Trai
     estMinutes: blocks.reduce((sum, block) => sum + block.estMinutes, 0),
   };
 };
+
+interface SlotBearingBlock {
+  readonly block: SessionBlock;
+  readonly ordinal: number;
+}
+
+const slotBearingBlocks = (blocks: readonly SessionBlock[]): readonly SlotBearingBlock[] =>
+  blocks.flatMap((block, index) =>
+    block.slots.length === 0 ? [] : [{ block, ordinal: blockOrdinal(blocks, index) }],
+  );
+
+const exerciseSelection = (plan: WeeklyPlan): unknown =>
+  plan.days.map((day) =>
+    day.sessions.map((session) =>
+      session.kind === 'training'
+        ? slotBearingBlocks(session.blocks).map(({ block, ordinal }) => ({
+            type: block.type,
+            ordinal,
+            slots: block.slots.map((slot) => slot.exerciseSlug),
+          }))
+        : session.kind,
+    ),
+  );
+
+const sameExerciseSelection = (left: WeeklyPlan, right: WeeklyPlan): boolean =>
+  JSON.stringify(exerciseSelection(left)) === JSON.stringify(exerciseSelection(right));
+
+const conditioningSlots = (block: SessionBlock): readonly ExerciseSlot[] =>
+  block.slots.filter((slot) => slotRole(slot) === 'conditioning');
+
+const restoreConditioningSlots = (plan: WeeklyPlan, source: WeeklyPlan): WeeklyPlan => ({
+  ...plan,
+  days: plan.days.map((day, dayIndex) => {
+    const sourceDay = source.days[dayIndex] as PlanDay;
+    const sessions = day.sessions.map((session, sessionIndex) => {
+      const sourceSession = sourceDay.sessions[sessionIndex] as PlanSession;
+      if (session.kind !== 'training' || sourceSession.kind !== 'training') return session;
+      const blocks = [...session.blocks];
+      sourceSession.blocks.forEach((sourceBlock, sourceBlockIndex) => {
+        const conditioning = conditioningSlots(sourceBlock);
+        if (conditioning.length === 0) return;
+        const ordinal = blockOrdinal(sourceSession.blocks, sourceBlockIndex);
+        const targetBlock = blockWithKey(blocks, sourceBlock, ordinal);
+        if (targetBlock === undefined) {
+          blocks.push({
+            ...sourceBlock,
+            slots: conditioning,
+            estMinutes: conditioning.reduce(
+              (sum, slot) => sum + estimateSlotMinutes(slot.scheme),
+              0,
+            ),
+          });
+          return;
+        }
+        const targetIndex = blocks.indexOf(targetBlock);
+        const existingSlugs = new Set(targetBlock.slots.map((slot) => slot.exerciseSlug));
+        const missing = conditioning.filter((slot) => !existingSlugs.has(slot.exerciseSlug));
+        const slots = [...targetBlock.slots, ...missing];
+        blocks[targetIndex] = {
+          ...targetBlock,
+          slots,
+          estMinutes: slots.reduce((sum, slot) => sum + estimateSlotMinutes(slot.scheme), 0),
+        };
+      });
+      const derivedBlocks = deriveSessionRecommendations(blocks, session.focus);
+      return {
+        ...session,
+        blocks: derivedBlocks,
+        estMinutes: derivedBlocks.reduce((sum, block) => sum + block.estMinutes, 0),
+      };
+    });
+    return {
+      ...day,
+      sessions,
+      estMinutes: sessions.reduce((sum, session) => sum + session.estMinutes, 0),
+    };
+  }),
+});
 
 /** Scale prescribed sets and remove low-load conditioning finishers. */
 export const scalePlanLoad = (plan: WeeklyPlan, loadIndex: number): WeeklyPlan => {
@@ -255,6 +349,13 @@ const capIndex = (
 export const replanProgram = ({ program, breakWeeks, todayWeek }: ReplanInput): TrainingProgram => {
   const breakSet = new Set(breakWeeks);
   const curve = curveFor(program.input);
+  const persistedByWeekIndex = new Map(
+    program.weeks.flatMap((week) =>
+      week.weekIndex === undefined || week.plan === undefined
+        ? []
+        : [[week.weekIndex, week.plan] as const],
+    ),
+  );
   const past = program.weeks.filter((week) => week.weekStart < todayWeek);
   const usedWeekIndexes = new Set(
     past.flatMap((week) => (week.weekIndex === undefined ? [] : [week.weekIndex])),
@@ -286,14 +387,22 @@ export const replanProgram = ({ program, breakWeeks, todayWeek }: ReplanInput): 
         afterBreak && baseline.kind === 'deload'
           ? 1 + (baselineIndex % curve.deloadEvery) * curve.weeklyIncrement
           : baseline.loadIndex;
-      const template = program.basePlan;
+      const persisted = persistedByWeekIndex.get(baselineIndex);
+      const persistedLoadIndex = persisted?.loadIndex ?? 1;
+      const reference = scalePlanLoad(program.basePlan, persistedLoadIndex);
+      const edited = !sameExerciseSelection(persisted ?? reference, reference);
+      const template = edited && persisted !== undefined ? persisted : program.basePlan;
+      const templateLoadIndex = edited ? persistedLoadIndex : 1;
       const loadIndex = Math.max(
         curve.deloadLoadIndex,
-        capIndex(template, 1, target, previousLoads, curve.maxAcwr),
+        capIndex(template, templateLoadIndex, target, previousLoads, curve.maxAcwr),
       );
-      const scaled = scalePlanLoad(template, loadIndex);
+      let scaled = scalePlanLoad(template, loadIndex / Math.max(templateLoadIndex, Number.EPSILON));
+      if (edited && templateLoadIndex < 0.75 && loadIndex >= 0.75) {
+        scaled = restoreConditioningSlots(scaled, scalePlanLoad(program.basePlan, loadIndex));
+      }
       const plan = withMetadata(
-        rekeyPlanIds(scaled, baseline.plan as WeeklyPlan),
+        rekeyPlanIds(scaled, persisted ?? (baseline.plan as WeeklyPlan)),
         baselineIndex,
         kind,
         loadIndex,
