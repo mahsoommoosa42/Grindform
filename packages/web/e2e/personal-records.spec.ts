@@ -24,8 +24,12 @@ test('uses a bench PR to estimate the profile and prescribe tracker loads', asyn
   await generatePlan(page);
   await tapOrClick(page, 'track-mon');
   await expect(page.getByTestId('tracker')).toBeVisible();
-  await expect(page.getByTestId('pr-prescription').first()).toContainText('from your PRs');
-  await expect(page.locator('input[data-testid^="set-weight-"]').first()).not.toHaveValue('');
+  const prSlot = page
+    .locator('.slot')
+    .filter({ has: page.getByTestId('pr-prescription').first() })
+    .first();
+  await expect(prSlot.getByTestId('pr-prescription')).toContainText('from your PRs');
+  await expect(prSlot.locator('input[data-testid^="set-weight-"]').first()).not.toHaveValue('');
 });
 
 test('rejects PRs outside the supported weight and rep bounds', async ({ page }) => {
@@ -56,6 +60,10 @@ test('refreshes untouched tracker slots after saving a PR', async ({ page }) => 
   await tapOrClick(page, 'nav-week');
   await tapOrClick(page, 'track-mon');
 
-  await expect(page.getByTestId('pr-prescription').first()).toContainText('from your PRs');
-  await expect(page.locator('input[data-testid^="set-weight-"]').first()).not.toHaveValue('');
+  const prSlot = page
+    .locator('.slot')
+    .filter({ has: page.getByTestId('pr-prescription').first() })
+    .first();
+  await expect(prSlot.getByTestId('pr-prescription')).toContainText('from your PRs');
+  await expect(prSlot.locator('input[data-testid^="set-weight-"]').first()).not.toHaveValue('');
 });
