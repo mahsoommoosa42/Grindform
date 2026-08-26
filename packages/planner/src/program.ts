@@ -343,7 +343,6 @@ export const generateProgram = (input: ProgramGenerationInput): TrainingProgram 
 
 const capIndex = (
   template: WeeklyPlan,
-  _templateLoadIndex: number,
   target: number,
   previousLoads: readonly number[],
   maxAcwr: number,
@@ -419,7 +418,7 @@ export const replanProgram = ({ program, breakWeeks, todayWeek }: ReplanInput): 
       const templateLoadIndex = edited ? persistedLoadIndex : 1;
       const loadIndex = Math.max(
         curve.deloadLoadIndex,
-        capIndex(template, templateLoadIndex, target, previousLoads, curve.maxAcwr),
+        capIndex(template, target, previousLoads, curve.maxAcwr),
       );
       let scaled = scalePlanLoad(template, loadIndex);
       if (edited && templateLoadIndex < 0.75 && loadIndex >= 0.75) {
