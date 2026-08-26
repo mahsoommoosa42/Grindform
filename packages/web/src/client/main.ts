@@ -20,6 +20,7 @@ import {
   expandSets,
   GOAL_PROFILES,
   loadGoalForGoal,
+  oneRepMaxForExercise,
   prescribeLoad,
   profileForGoal,
 } from '@grindform/loadcalc';
@@ -57,6 +58,9 @@ import type {
   PlanSummary,
   ProgramSummary,
   WeekAssignment,
+  Lift,
+  PersonalRecord,
+  StrengthProfile,
 } from './types.ts';
 
 type CalendarMenuItem =
@@ -267,10 +271,31 @@ interface SlotUiState {
   /** Recent best set weight, used to estimate 1RM and prescribe load. */
   recentWeight: number | null;
   recentReps: number | null;
+  prescriptionSource: 'personal-record' | 'recent' | null;
   pyramid: boolean;
   warmups: number;
   sets: EditableSet[];
 }
+
+const LIFTS: readonly { lift: Lift; label: string }[] = [
+  { lift: 'back_squat', label: 'Back squat' },
+  { lift: 'bench_press', label: 'Bench press' },
+  { lift: 'deadlift', label: 'Deadlift' },
+  { lift: 'overhead_press', label: 'Overhead press' },
+  { lift: 'barbell_row', label: 'Barbell row' },
+];
+
+type PersonalRecordDraft = {
+  weightKg: string;
+  reps: string;
+  achievedOn: string;
+};
+
+const emptyPersonalRecordDraft = (): PersonalRecordDraft => ({
+  weightKg: '',
+  reps: '',
+  achievedOn: '',
+});
 
 /** Default warm-up sets: a couple for heavy mains, none for accessories. */
 const defaultWarmups = (slot: ExerciseSlot): number => (slot.pyramid === true ? 2 : 0);
@@ -345,6 +370,7 @@ const writeExternal = (sessionId: string, log: ExternalLog): void => {
 const buildSetRows = (
   slot: ExerciseSlot,
   goal: Goal,
+  profileOneRepMax: number | undefined,
   recentWeight: number | null,
   recentReps: number | null,
   pyramid: boolean,
@@ -352,9 +378,9 @@ const buildSetRows = (
 ): EditableSet[] => {
   const hasRecent =
     recentWeight !== null && recentWeight > 0 && recentReps !== null && recentReps >= 1;
-  const oneRepMax = hasRecent
-    ? estimateOneRepMax({ weight: recentWeight, reps: recentReps })
-    : undefined;
+  const oneRepMax =
+    profileOneRepMax ??
+    (hasRecent ? estimateOneRepMax({ weight: recentWeight, reps: recentReps }) : undefined);
   const intensity = profileForGoal(loadGoalForGoal(goal)).intensity;
   const planned = expandSets({
     workingSets: slot.scheme.sets,
@@ -482,6 +508,10 @@ export class GfApp extends LitElement {
     pickerSearch: { state: true },
     pickerBusy: { state: true },
     pickerError: { state: true },
+    personalRecords: { state: true },
+    personalRecordDrafts: { state: true },
+    personalRecordsBusy: { state: true },
+    personalRecordsError: { state: true },
   };
 
   declare authStatus: 'loading' | 'auth' | 'ready';
@@ -561,6 +591,11 @@ export class GfApp extends LitElement {
   declare pickerSearch: string;
   declare pickerBusy: boolean;
   declare pickerError: string | null;
+  declare personalRecords: PersonalRecord[];
+  declare strengthProfile: StrengthProfile | undefined;
+  declare personalRecordDrafts: Record<Lift, PersonalRecordDraft>;
+  declare personalRecordsBusy: boolean;
+  declare personalRecordsError: string | null;
 
   constructor() {
     super();
@@ -632,6 +667,13 @@ export class GfApp extends LitElement {
     this.pickerSearch = '';
     this.pickerBusy = false;
     this.pickerError = null;
+    this.personalRecords = [];
+    this.strengthProfile = undefined;
+    this.personalRecordDrafts = Object.fromEntries(
+      LIFTS.map(({ lift }) => [lift, emptyPersonalRecordDraft()]),
+    ) as Record<Lift, PersonalRecordDraft>;
+    this.personalRecordsBusy = false;
+    this.personalRecordsError = null;
   }
 
   override connectedCallback(): void {
@@ -716,6 +758,7 @@ export class GfApp extends LitElement {
     this.user = user;
     this.authStatus = 'ready';
     void this.syncSettings();
+    void this.loadPersonalRecords();
     void this.loadExercises();
     void this.loadResolvedWeek(this.weekStart);
   }
@@ -979,6 +1022,87 @@ export class GfApp extends LitElement {
     }
   }
 
+  private async loadPersonalRecords(): Promise<void> {
+    this.personalRecordsError = null;
+    try {
+      const { records, profile } = await api.getPersonalRecords();
+      this.personalRecords = records;
+      this.strengthProfile = profile;
+      const drafts = Object.fromEntries(
+        LIFTS.map(({ lift }) => {
+          const record = records.find((candidate) => candidate.lift === lift);
+          return [
+            lift,
+            record === undefined
+              ? emptyPersonalRecordDraft()
+              : {
+                  weightKg: String(record.weightKg),
+                  reps: String(record.reps),
+                  achievedOn: record.achievedOn ?? '',
+                },
+          ];
+        }),
+      ) as Record<Lift, PersonalRecordDraft>;
+      this.personalRecordDrafts = drafts;
+    } catch (err) {
+      this.personalRecordsError =
+        err instanceof ApiError ? err.message : 'Could not load your personal records.';
+    }
+  }
+
+  private onPersonalRecordInput(lift: Lift, field: keyof PersonalRecordDraft, value: string): void {
+    this.personalRecordDrafts = {
+      ...this.personalRecordDrafts,
+      [lift]: { ...this.personalRecordDrafts[lift], [field]: value },
+    };
+  }
+
+  private async savePersonalRecord(lift: Lift): Promise<void> {
+    const draft = this.personalRecordDrafts[lift];
+    const weightKg = Number(draft.weightKg);
+    const reps = Number(draft.reps);
+    if (!Number.isFinite(weightKg) || weightKg <= 0 || !Number.isInteger(reps) || reps < 1) {
+      this.personalRecordsError = 'Enter a positive weight and whole-number reps.';
+      return;
+    }
+    this.personalRecordsBusy = true;
+    this.personalRecordsError = null;
+    try {
+      const result = await api.savePersonalRecord(lift, {
+        weightKg,
+        reps,
+        ...(draft.achievedOn === '' ? {} : { achievedOn: draft.achievedOn }),
+      });
+      this.personalRecords = result.records;
+      this.strengthProfile = result.profile;
+      this.personalRecordsError = null;
+    } catch (err) {
+      this.personalRecordsError =
+        err instanceof ApiError ? err.message : 'Could not save your personal record.';
+    } finally {
+      this.personalRecordsBusy = false;
+    }
+  }
+
+  private async clearPersonalRecord(lift: Lift): Promise<void> {
+    this.personalRecordsBusy = true;
+    this.personalRecordsError = null;
+    try {
+      const result = await api.deletePersonalRecord(lift);
+      this.personalRecords = result.records;
+      this.strengthProfile = result.profile;
+      this.personalRecordDrafts = {
+        ...this.personalRecordDrafts,
+        [lift]: emptyPersonalRecordDraft(),
+      };
+    } catch (err) {
+      this.personalRecordsError =
+        err instanceof ApiError ? err.message : 'Could not clear your personal record.';
+    } finally {
+      this.personalRecordsBusy = false;
+    }
+  }
+
   private async onResendVerification(): Promise<void> {
     this.resendBusy = true;
     try {
@@ -1045,6 +1169,12 @@ export class GfApp extends LitElement {
     this.adminDetail = null;
     this.catalog = [];
     this.customExercises = [];
+    this.personalRecords = [];
+    this.strengthProfile = undefined;
+    this.personalRecordDrafts = Object.fromEntries(
+      LIFTS.map(({ lift }) => [lift, emptyPersonalRecordDraft()]),
+    ) as Record<Lift, PersonalRecordDraft>;
+    this.personalRecordsError = null;
     this.picker = null;
     this.customForm = emptyCustomForm();
     this.verifyStatus = 'idle';
@@ -1246,6 +1376,7 @@ export class GfApp extends LitElement {
     this.busy = true;
     this.error = null;
     try {
+      await this.loadExercises();
       const request = {
         goal: this.goal,
         experience: this.experience,
@@ -1286,6 +1417,23 @@ export class GfApp extends LitElement {
     }
   }
 
+  private profileMaxForSlot(slot: ExerciseSlot): number | undefined {
+    const exercise = this.catalog.find((candidate) => candidate.slug === slot.exerciseSlug);
+    if (exercise?.liftGroup === undefined || this.strengthProfile === undefined) return undefined;
+    return oneRepMaxForExercise(exercise.liftGroup, this.strengthProfile);
+  }
+
+  private prescriptionSourceForSlot(
+    slot: ExerciseSlot,
+    recentWeight: number | null,
+    recentReps: number | null,
+  ): 'personal-record' | 'recent' | null {
+    if (this.profileMaxForSlot(slot) !== undefined) return 'personal-record';
+    return recentWeight !== null && recentReps !== null && recentWeight > 0 && recentReps >= 1
+      ? 'recent'
+      : null;
+  }
+
   /** Seed per-slot tracker state for a day (recent set, options, set rows). */
   private initSlotState(day: PlanDay): void {
     const next: Record<string, SlotUiState> = { ...this.slotState };
@@ -1298,12 +1446,22 @@ export class GfApp extends LitElement {
         const warmups = defaultWarmups(slot);
         const recentWeight = recent?.weight ?? null;
         const recentReps = recent?.reps ?? null;
+        const profileOneRepMax = this.profileMaxForSlot(slot);
         next[slot.id] = {
           recentWeight,
           recentReps,
+          prescriptionSource: this.prescriptionSourceForSlot(slot, recentWeight, recentReps),
           pyramid,
           warmups,
-          sets: buildSetRows(slot, this.goalForDay(), recentWeight, recentReps, pyramid, warmups),
+          sets: buildSetRows(
+            slot,
+            this.goalForDay(),
+            profileOneRepMax,
+            recentWeight,
+            recentReps,
+            pyramid,
+            warmups,
+          ),
         };
       }
     }
@@ -1625,10 +1783,16 @@ export class GfApp extends LitElement {
     next.sets = buildSetRows(
       slot,
       this.goalForDay(),
+      this.profileMaxForSlot(slot),
       next.recentWeight,
       next.recentReps,
       next.pyramid,
       next.warmups,
+    );
+    next.prescriptionSource = this.prescriptionSourceForSlot(
+      slot,
+      next.recentWeight,
+      next.recentReps,
     );
     this.slotState = { ...this.slotState, [slot.id]: next };
   }
@@ -2278,6 +2442,112 @@ export class GfApp extends LitElement {
     `;
   }
 
+  private renderPersonalRecords(): TemplateResult {
+    const hasProfile = this.strengthProfile !== undefined;
+    return html`
+      <fieldset class="block personal-records" data-testid="personal-records">
+        <legend>My PRs</legend>
+        <p class="hint">
+          Enter one current lift to get a full strength profile. Missing lifts are estimated
+          automatically and used for mapped barbell exercises.
+        </p>
+        ${this.personalRecordsError !== null
+          ? html`<p class="banner error" role="alert" data-testid="personal-records-error">
+              ${this.personalRecordsError}
+            </p>`
+          : nothing}
+        ${!hasProfile
+          ? html`<p class="empty-state" data-testid="personal-records-empty">
+              You only need one lift to get a full profile.
+            </p>`
+          : nothing}
+        <div class="grid">
+          ${LIFTS.map(({ lift, label }) => {
+            const draft = this.personalRecordDrafts[lift];
+            const entry = this.strengthProfile?.find((candidate) => candidate.lift === lift);
+            const measured = entry?.source === 'measured';
+            return html`
+              <div class="pr-card" data-testid=${`pr-${lift}`}>
+                <div class="pr-heading">
+                  <strong>${label}</strong>
+                  ${entry === undefined
+                    ? html`<span class="hint">Not set</span>`
+                    : html`<span
+                        class=${measured ? 'pr-badge' : 'pr-badge estimated'}
+                        data-testid=${`pr-source-${lift}`}
+                        >${measured ? 'Measured' : 'Estimated'}</span
+                      >`}
+                </div>
+                <div class="pr-fields">
+                  <label class="field">
+                    <span>Weight (kg)</span>
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="0.5"
+                      data-testid=${`pr-weight-${lift}`}
+                      .value=${draft.weightKg}
+                      @input=${(e: Event) =>
+                        this.onPersonalRecordInput(
+                          lift,
+                          'weightKg',
+                          (e.target as HTMLInputElement).value,
+                        )}
+                    />
+                  </label>
+                  <label class="field">
+                    <span>Reps</span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      data-testid=${`pr-reps-${lift}`}
+                      .value=${draft.reps}
+                      @input=${(e: Event) =>
+                        this.onPersonalRecordInput(
+                          lift,
+                          'reps',
+                          (e.target as HTMLInputElement).value,
+                        )}
+                    />
+                  </label>
+                </div>
+                <div class="pr-actions">
+                  <button
+                    class="ghost"
+                    type="button"
+                    data-testid=${`pr-save-${lift}`}
+                    ?disabled=${this.personalRecordsBusy}
+                    @click=${() => void this.savePersonalRecord(lift)}
+                  >
+                    Save
+                  </button>
+                  <button
+                    class="ghost"
+                    type="button"
+                    data-testid=${`pr-clear-${lift}`}
+                    ?disabled=${this.personalRecordsBusy || entry === undefined}
+                    @click=${() => void this.clearPersonalRecord(lift)}
+                  >
+                    Clear
+                  </button>
+                </div>
+                ${entry === undefined
+                  ? nothing
+                  : html`<p class="pr-result" data-testid=${`pr-orm-${lift}`}>
+                      1RM: <strong>${entry.oneRepMaxKg} kg</strong>
+                      ${measured
+                        ? nothing
+                        : html`<span class="hint">estimated from your other PRs</span>`}
+                    </p>`}
+              </div>
+            `;
+          })}
+        </div>
+      </fieldset>
+    `;
+  }
+
   private renderGenerator(): TemplateResult {
     return html`
       <section class="panel" data-testid="generator">
@@ -2286,6 +2556,7 @@ export class GfApp extends LitElement {
           Pick a goal and a weekly shape. Block out days for Pilates or Physio, reserve warm-up,
           cool-down and a first-15-minutes physio slot — Grindform fills in the rest.
         </p>
+        ${this.renderPersonalRecords()}
 
         <div class="grid">
           <label class="field">
@@ -3484,6 +3755,12 @@ export class GfApp extends LitElement {
 
   /** A short "1RM ≈ … → … kg" estimate line for the prescribed working load. */
   private renderEstimate(state: SlotUiState): TemplateResult {
+    if (state.prescriptionSource === 'personal-record') {
+      const max = state.sets.find((row) => row.kind === 'working')?.weight;
+      return html`<small class="estimate" data-testid="pr-prescription">
+        PR-derived load${max === null || max === undefined ? nothing : html` · 1RM profile`}
+      </small>`;
+    }
     if (state.recentWeight === null || state.recentReps === null) return html`${nothing}`;
     if (state.recentWeight <= 0 || state.recentReps < 1) return html`${nothing}`;
     const orm = Math.round(
@@ -3834,6 +4111,56 @@ export class GfApp extends LitElement {
       color: var(--gf-muted);
       margin: -4px 0 10px;
       font-size: 0.8rem;
+    }
+    .pr-card {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--gf-border);
+      border-radius: var(--gf-radius);
+      min-width: 0;
+    }
+    .personal-records,
+    .personal-records .grid {
+      min-width: 0;
+    }
+    .pr-heading,
+    .pr-actions,
+    .pr-result {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pr-fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      min-width: 0;
+    }
+    .pr-fields input {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .pr-badge {
+      color: var(--gf-accent-text);
+      background: var(--gf-accent);
+      border-radius: var(--gf-radius-pill);
+      padding: 3px 8px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .pr-badge.estimated {
+      color: var(--gf-text);
+      background: var(--gf-hover);
+      border: 1px solid var(--gf-border);
+    }
+    .pr-result {
+      margin: 0;
+      color: var(--gf-text-soft);
+      font-size: 0.88rem;
     }
     .session-add {
       display: flex;

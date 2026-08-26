@@ -43,6 +43,11 @@ export type MuscleGroup =
   | 'full_body';
 export type BlockType = 'warmup' | 'physio' | 'main' | 'accessory' | 'cooldown';
 export type ExerciseRole = 'main' | 'accessory' | 'conditioning' | 'mobility';
+export type Lift = 'back_squat' | 'bench_press' | 'deadlift' | 'overhead_press' | 'barbell_row';
+export interface LiftGroup {
+  readonly lift: Lift;
+  readonly coefficient: number;
+}
 export type MovementPattern =
   | 'squat'
   | 'hinge'
@@ -68,6 +73,7 @@ export interface CatalogExercise {
   readonly unilateral: boolean;
   readonly minExperience: Experience;
   readonly goals: readonly Goal[];
+  readonly liftGroup?: LiftGroup;
   readonly cue?: string;
 }
 
@@ -271,6 +277,23 @@ export interface Settings {
   readonly theme: ThemeId;
   readonly preferences: Record<string, unknown>;
 }
+
+export interface PersonalRecord {
+  readonly lift: Lift;
+  readonly weightKg: number;
+  readonly reps: number;
+  readonly achievedOn?: string;
+  readonly oneRepMaxKg: number;
+  readonly updatedAt: string;
+}
+
+export interface StrengthProfileEntry {
+  readonly lift: Lift;
+  readonly oneRepMaxKg: number;
+  readonly source: 'measured' | 'estimated';
+}
+
+export type StrengthProfile = StrengthProfileEntry[];
 
 export type Role = 'member' | 'admin';
 export type AccountStatus = 'active' | 'disabled';
