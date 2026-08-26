@@ -8,10 +8,19 @@ test('generated plans are tagged, survive reload, and carry forward as default',
   await openApp(page);
   await generatePlan(page);
   await expect(page.getByTestId('week-source')).toContainText('Tagged to this week');
+  await expect(
+    page.locator('.recommendation').filter({ hasText: 'Hip hinge drill' }).first(),
+  ).toBeVisible();
+  await expect(
+    page.locator('.recommendation').filter({ hasText: 'hamstrings' }).first(),
+  ).toBeVisible();
 
   await page.reload();
   await expect(page.getByTestId('week')).toBeVisible();
   await expect(page.getByTestId('week-source')).toContainText('Tagged to this week');
+  await expect(
+    page.locator('.recommendation').filter({ hasText: 'Hip hinge drill' }).first(),
+  ).toBeVisible();
 
   await tapOrClick(page, 'nav-calendar');
   await expect(page.getByTestId('calendar')).toBeVisible();
@@ -132,6 +141,16 @@ test('generates a program, replans a break week, and restores it when unmarked',
   await expect(page.locator('.calendar-plan').filter({ hasText: 'Clear default' })).toHaveCount(1);
   await expect(page.getByTestId(`calendar-week-${afterProgramWeek}`)).toContainText('default');
 
+  await tapOrClick(page, 'nav-week');
+  await expect(
+    page.locator('.recommendation').filter({ hasText: 'Hip hinge drill' }).first(),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.locator('.recommendation').filter({ hasText: 'Hip hinge drill' }).first(),
+  ).toBeVisible();
+
+  await tapOrClick(page, 'nav-calendar');
   page.once('dialog', (dialog) => void dialog.accept());
   await page.getByTestId(`calendar-delete-program-${programId}`).click();
   await expect(programCard).toHaveCount(0);

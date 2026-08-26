@@ -11,7 +11,14 @@ interface PlanResponse {
     id: string;
     days: {
       id: string;
-      sessions: { kind: string; blocks?: { slots: { id: string; exerciseSlug: string }[] }[] }[];
+      sessions: {
+        kind: string;
+        blocks?: {
+          type?: string;
+          slots: { id: string; exerciseSlug: string }[];
+          recommendations?: { name: string; dose: string; reason: string }[];
+        }[];
+      }[];
     }[];
   };
 }
@@ -531,7 +538,11 @@ interface FullPlan {
     sessions: {
       id: string;
       kind: string;
-      blocks?: { type: string; slots: { id: string; exerciseSlug: string; name: string }[] }[];
+      blocks?: {
+        type: string;
+        slots: { id: string; exerciseSlug: string; name: string }[];
+        recommendations?: { name: string; dose: string; reason: string }[];
+      }[];
     }[];
   }[];
 }
@@ -819,7 +830,21 @@ describe('Restore day sessions (undo/redo)', () => {
     const dayId = plan.days[0]!.id;
     // The full sessions object the server returned (training + external),
     // captured before any edit — this is exactly what the client replays.
-    const snapshot = plan.days[0]!.sessions;
+    const snapshot = plan.days[0]!.sessions.map((session) =>
+      session.kind === 'training'
+        ? {
+            ...session,
+            blocks: (session.blocks ?? []).map((block) =>
+              block.type === 'warmup'
+                ? {
+                    ...block,
+                    recommendations: [{ name: 'Tampered', dose: '1', reason: 'client input' }],
+                  }
+                : block,
+            ),
+          }
+        : session,
+    );
     const slot = aSlot(plan);
     const swap = await client.json(
       `/v1/plans/${plan.id}/days/${dayId}/slots/${slot.id}/swap`,
@@ -833,9 +858,18 @@ describe('Restore day sessions (undo/redo)', () => {
     });
     expect(res.status).toBe(200);
     const restored = ((await res.json()) as { plan: FullPlan }).plan;
-    const back = trainingSession(restored)
-      .blocks?.flatMap((b) => b.slots)
-      .find((s) => s.id === slot.id);
+    const restoredTraining = trainingSession(restored);
+    expect(
+      (restoredTraining.blocks ?? [])
+        .find((block) => block.type === 'warmup')
+        ?.recommendations?.some((item) => item.name === 'Tampered'),
+    ).toBe(false);
+    expect(
+      (restoredTraining.blocks ?? [])
+        .find((block) => block.type === 'warmup')
+        ?.recommendations?.some((item) => item.name === 'Hip hinge drill'),
+    ).toBe(true);
+    const back = restoredTraining.blocks?.flatMap((b) => b.slots).find((s) => s.id === slot.id);
     expect(back?.exerciseSlug).toBe(slot.exerciseSlug);
     // The external run session survives the round-trip too.
     expect(restored.days[0]!.sessions.some((s) => s.kind === 'external')).toBe(true);

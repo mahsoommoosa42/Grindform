@@ -74,6 +74,7 @@ import { estimateOneRepMax, resolveStrengthProfile } from '@grindform/loadcalc';
 import {
   addSlotToSession,
   customExerciseSlug,
+  deriveSessionRecommendations,
   generatePlan,
   generateProgram,
   replanProgram,
@@ -683,7 +684,12 @@ export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
     const userId = c.get('auth').userId;
     const { plan, day } = await loadDay(db, userId, c.req.param('planId'), c.req.param('dayId'));
     const body = parseOrThrow(RestoreDaySessionsBodySchema, await c.req.json(), 'sessions body');
-    const sessions = body.sessions as unknown as PlanDay['sessions'];
+    const parsedSessions = body.sessions as unknown as PlanDay['sessions'];
+    const sessions = parsedSessions.map((session) =>
+      session.kind === 'training'
+        ? { ...session, blocks: deriveSessionRecommendations(session.blocks, session.focus) }
+        : session,
+    );
     const estMinutes = sessions.reduce((sum, s) => sum + s.estMinutes, 0);
     const updated: PlanDay = { ...day, sessions, estMinutes };
     return c.json({ plan: await persistDay(db, userId, updated, plan.id) });

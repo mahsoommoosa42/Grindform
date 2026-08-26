@@ -18,6 +18,7 @@ import type {
   ProgramWeekKind,
   UserId,
 } from '@grindform/core';
+import { deriveSessionRecommendations } from '@grindform/planner';
 import type { PlanDay, PlanSession, WeeklyPlan } from '@grindform/planner';
 
 import type { DbOrTx } from '../client.ts';
@@ -40,11 +41,18 @@ export interface PlanSummary {
 /** A `plan_days` row as selected from the database. */
 type PlanDayRow = typeof planDays.$inferSelect;
 
+const hydrateSessions = (sessions: readonly PlanSession[]): readonly PlanSession[] =>
+  sessions.map((session) =>
+    session.kind === 'training'
+      ? { ...session, blocks: deriveSessionRecommendations(session.blocks, session.focus) }
+      : session,
+  );
+
 /** Reassemble a {@link PlanDay} from its row, dropping null optionals. */
 const mapDay = (row: PlanDayRow): PlanDay => ({
   id: row.id,
   weekday: row.weekday,
-  sessions: row.sessions,
+  sessions: hydrateSessions(row.sessions),
   estMinutes: row.estMinutes,
   ...(row.label === null ? {} : { label: row.label }),
 });

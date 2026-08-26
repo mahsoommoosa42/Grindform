@@ -6,6 +6,7 @@
  */
 
 export type {
+  DrillRecommendation,
   ExerciseSlot,
   ExternalSession,
   PlanDay,
@@ -15,6 +16,7 @@ export type {
   TrainingSession,
   WeeklyPlan,
 } from './types.ts';
+export { deriveSessionRecommendations } from './recommendations.ts';
 export { generatePlan } from './generate.ts';
 export { DEFAULT_PROGRAM_CURVE, generateProgram, replanProgram, scalePlanLoad } from './program.ts';
 export type { ProgramWeek, ReplanInput, TrainingProgram } from './program.ts';

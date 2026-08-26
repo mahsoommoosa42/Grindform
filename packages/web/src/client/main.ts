@@ -3311,6 +3311,21 @@ export class GfApp extends LitElement {
           <span class="btag ${b.type}">${b.title}</span>
           <span class="block-min">${b.estMinutes}m</span>
         </div>
+        ${b.recommendations === undefined || b.recommendations.length === 0
+          ? nothing
+          : html`<ul class="recommendations" aria-label="Recommended drills">
+              ${b.recommendations.map(
+                (recommendation) => html`
+                  <li class="recommendation">
+                    <div class="recommendation-head">
+                      <strong>${recommendation.name}</strong>
+                      <span>${recommendation.dose}</span>
+                    </div>
+                    <span class="recommendation-reason">${recommendation.reason}</span>
+                  </li>
+                `,
+              )}
+            </ul>`}
         ${b.slots.length > 0
           ? html`<ul class="slots">
               ${b.slots.map((slot) => this.renderSlotRow(dayId, slot))}
@@ -4726,6 +4741,35 @@ export class GfApp extends LitElement {
       padding: 0 0 0 2px;
       display: grid;
       gap: 3px;
+    }
+    .recommendations {
+      list-style: none;
+      margin: 0 0 2px;
+      padding: 0 0 0 2px;
+      display: grid;
+      gap: 3px;
+    }
+    .recommendation {
+      display: grid;
+      gap: 2px;
+      padding: 5px 6px;
+      border-left: 2px solid var(--gf-accent);
+      background: var(--gf-surface);
+      color: var(--gf-muted);
+    }
+    .recommendation-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--gf-text);
+    }
+    .recommendation-head span {
+      flex: 0 0 auto;
+      font-size: 0.78rem;
+    }
+    .recommendation-reason {
+      font-size: 0.78rem;
+      overflow-wrap: break-word;
     }
     .slot-row {
       display: flex;

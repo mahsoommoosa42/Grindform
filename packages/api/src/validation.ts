@@ -121,6 +121,16 @@ const SessionBlockSnapshotSchema = z.object({
   estMinutes: z.number().int().min(0).max(600),
   slots: z.array(ExerciseSlotSnapshotSchema).max(40),
   note: z.string().min(1).max(400).optional(),
+  recommendations: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(120),
+        dose: z.string().min(1).max(80),
+        reason: z.string().min(1).max(240),
+      }),
+    )
+    .max(8)
+    .optional(),
 });
 
 const TrainingSessionSnapshotSchema = z.object({

@@ -27,6 +27,7 @@ import type {
   TrainingSession,
   WeeklyPlan,
 } from './types.ts';
+import { deriveSessionRecommendations } from './recommendations.ts';
 
 /** Named defaults for the baseline progression curve. */
 export const DEFAULT_PROGRAM_CURVE: ProgramCurveConfig = ProgramCurveConfigSchema.parse({});
@@ -148,7 +149,7 @@ const scaleSlot = (slot: ExerciseSlot, loadIndex: number): ExerciseSlot => ({
 });
 
 const scaleTrainingSession = (session: TrainingSession, loadIndex: number): TrainingSession => {
-  const blocks: SessionBlock[] = session.blocks
+  const scaledBlocks: SessionBlock[] = session.blocks
     .map((block) => {
       const slots = block.slots
         .filter((slot) => !(slotRole(slot) === 'conditioning' && loadIndex < 0.75))
@@ -162,6 +163,7 @@ const scaleTrainingSession = (session: TrainingSession, loadIndex: number): Trai
     .filter(
       (block) => !(block.type === 'main' || block.type === 'accessory') || block.slots.length > 0,
     );
+  const blocks = deriveSessionRecommendations(scaledBlocks, session.focus);
   return {
     ...session,
     blocks,

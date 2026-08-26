@@ -128,6 +128,12 @@ export interface SupersetRef {
   readonly order: number;
 }
 
+export interface DrillRecommendation {
+  readonly name: string;
+  readonly dose: string;
+  readonly reason: string;
+}
+
 export interface ExerciseSlot {
   readonly id: string;
   readonly exerciseSlug: string;
@@ -145,6 +151,7 @@ export interface SessionBlock {
   readonly estMinutes: number;
   readonly slots: readonly ExerciseSlot[];
   readonly note?: string;
+  readonly recommendations?: readonly DrillRecommendation[];
 }
 
 export interface TrainingSession {
