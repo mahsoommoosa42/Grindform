@@ -49,7 +49,55 @@ Same setup as `testing-auth-admin-gdpr` (build client, start `packages/web/src/s
 - The Build form is tall: zoom out (`ctrl+minus` ~4–5 steps) so the `program-weeks` field and the submit button are visible together — otherwise you can't see the label change in the same screenshot.
 - The Calendar list only spans ±6 weeks around today, so a program longer than ~7 weeks cannot be fully verified in the UI; assert the visible window follows the curve instead.
 - Switching to Calendar does **not** reset the My week cursor — after navigating forward, "My week" still shows the week you left off on. Click ← back to the current week before asserting current-week behaviour (the nav item is disabled exactly when you're on the current week).
-- For phone-width checks, Chrome refuses window widths below ~532px, so resizing the window is not enough — use the DevTools device toolbar (400×982 works well) and corroborate with `document.documentElement.scrollWidth <= innerWidth`.
+- For phone-width checks, Chrome refuses window widths below ~532px, so resizing the window is not enough — use the DevTools device toolbar (390×844 / 400×982 work well) and corroborate with `document.documentElement.scrollWidth <= innerWidth`.
+- **Marking/unmarking a break silently reverts manual exercise edits** on program weeks, and the open week view keeps rendering the stale edited state. The client's cached plan id is now dead, so the next ✕/↻ click fails with a red `plan not found` banner. Always hard-reload after a replan before trusting what the week view shows, and never interleave slot edits with break marking when you are trying to attribute a change. (`persistProgramFuture` deletes and re-creates program plans — the same path that once dropped the default flag.)
+- Corollary for any persistence test: verify reload-persistence *in isolation* first. An edit that vanishes after "edit → mark break → reload" is the replan's doing, not a persistence bug.
+
+## Warm-up / cool-down drill recommendations (week view)
+Generated training sessions render read-only drills inside the warm-up and cool-down blocks
+(`<ul class="recommendations" aria-label="Recommended drills">`, left accent border, no ↻/✕ controls).
+The tracker view deliberately renders none of them.
+
+**The rule changed.** An earlier version derived the drill *count* from block minutes
+(`floor(minutes/3)` clamped 1–4); that PR was rejected and closed. The current rule is lift-volume based —
+if you see a minute-derived count, you are on an old branch.
+
+- One warm-up drill per **distinct movement pattern**, one cool-down drill per **distinct primary muscle**,
+  taken only from `main`/`accessory` blocks. Block minutes no longer cap the count at all; they only gate
+  the `estMinutes <= 0` case (0 minutes ⇒ no drills). A 5m cool-down showing 3–5 drills is correct now, and
+  is the cleanest proof the old cap is gone.
+- **Dose scales with how many qualifying lifts share that pattern/muscle** (`n`):
+  `sets` ⇒ `min(3, n) × reps` (**capped at 3**); `seconds` ⇒ `base + 15(n-1)`; `minutes` ⇒ `2 + (n-1)`.
+  Only `sets` is capped. Best single assertion: find a card with two different set counts (e.g.
+  `Hip hinge drill 3 × 8` beside `Reverse lunge 1 × 6 each side`), then add a 4th same-pattern lift and
+  confirm it stays `3 × 8`.
+- **Conditioning-role slots contribute nothing**, even sitting in an accessory block. So on a Lose fat day
+  with a finisher there must be **no "Easy pulse raiser" and no "Easy walk"**. This inverts the old oracle —
+  do not assert that a conditioning day *leads* with a pulse raiser.
+  Role-conditioning slugs: `kettlebell-swing`, `dumbbell-thruster`, `burpee`, `rowing-intervals`,
+  `farmer-carry`, `mountain-climber`. Note `dead-bug` is role **mobility**, and `kettlebell-swing` is a
+  hinge pattern that still contributes nothing — both make good discriminating cases.
+- Cool-down ordering puts the **focus-line muscles first**, then the rest in first-seen order. Compare the
+  card's `Quads · Shoulders` header against the drill order.
+- **Recommendations are derived on read** (`plansRepo.mapDay` → `mapSession`), so they always match the
+  slots currently on the day and a hard reload recomputes them server-side. Editing slots with ✕ / ↻ /
+  + Add exercise must move the doses immediately — removing one of two same-pattern lifts drops
+  `2 × 8` → `1 × 8`, removing the last one deletes the row.
+- **Deload trap — two filters disagree.** Recommendations exclude by catalog `role === 'conditioning'`, but
+  `scaleTrainingSession` separately drops any slot with `scheme.repsHigh >= 18` when `loadIndex < 0.75`.
+  `dead-bug` is mobility yet is prescribed `3 × 15–20` in Lose fat, so at the 60% deload it disappears and
+  takes its `Dead bug` warm-up + `Cobra stretch` cool-down with it. Expect the deload drill set to be
+  *unchanged* only on days with no high-rep non-conditioning slot; check Saturday-style core days explicitly
+  rather than picking a day that happens to pass.
+- Content-quality watch items: `seconds` doses are uncapped while `sets` cap at 3, so a heavily-worked muscle
+  can reach `90 s each side` and a 5m cool-down can total ~5.75m of stretching. Also `Dead bug` can appear
+  both as a prescribed accessory and as a recommended warm-up drill on the same card.
+- Good specificity check: compare a hinge/lunge lower-body day (Hip hinge drill / Reverse lunge →
+  Figure-four stretch) against a pressing day (Incline push-up / Dynamic arm circles → Doorway chest
+  stretch). Identical lists across structurally different days would be the real failure.
+- Overflow check at 390px: query inside the shadow root —
+  `document.querySelector('gf-app').shadowRoot.querySelectorAll('.recommendation')` — and compare each
+  `getBoundingClientRect().right` against `innerWidth`, plus `scrollWidth > clientWidth` for clipped reasons.
 
 ## Devin Secrets Needed
 None — local server with throwaway accounts.
