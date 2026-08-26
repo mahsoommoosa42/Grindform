@@ -3765,9 +3765,9 @@ export class GfApp extends LitElement {
 
   /** A short 1RM estimate line for the prescribed working load. */
   private renderEstimate(state: SlotUiState): TemplateResult {
-    if (state.prescriptionSource === 'personal-record') {
+    if (state.prescriptionSource === 'personal-record' && state.profileOneRepMax !== undefined) {
       return html`<small class="estimate" data-testid="pr-prescription">
-        1RM ≈ ${displayOneRepMax(state.profileOneRepMax!)} kg · from your PRs
+        1RM ≈ ${displayOneRepMax(state.profileOneRepMax)} kg · from your PRs
       </small>`;
     }
     if (state.recentWeight === null || state.recentReps === null) return html`${nothing}`;
