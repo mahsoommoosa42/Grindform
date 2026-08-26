@@ -77,6 +77,82 @@ describe('program API', () => {
     expect((await (await client.request('/v1/weeks/2026-07-27')).json()).source).toBe('assigned');
   });
 
+  it('preserves edited future plans and ids through break replanning', async () => {
+    const created = await client.json('/v1/programs', 'POST', input);
+    const createdBody = (await created.json()) as {
+      program: {
+        id: string;
+        weeks: Array<{
+          weekStart: string;
+          plan?: {
+            id: string;
+            days: Array<{
+              id: string;
+              sessions: Array<{
+                id: string;
+                kind: string;
+                blocks?: Array<{ slots: Array<{ id: string; exerciseSlug: string }> }>;
+              }>;
+            }>;
+          };
+        }>;
+      };
+    };
+    const futurePlan = createdBody.program.weeks.find(
+      (week) => week.weekStart === '2026-07-27',
+    )?.plan;
+    const futureDay = futurePlan?.days.find((day) =>
+      day.sessions.some((session) => session.kind === 'training'),
+    );
+    const futureSession = futureDay?.sessions.find((session) => session.kind === 'training');
+    const futureSlot = futureSession?.blocks?.flatMap((block) => block.slots)[0];
+    expect(futurePlan).toBeDefined();
+    expect(futureDay).toBeDefined();
+    expect(futureSession).toBeDefined();
+    expect(futureSlot).toBeDefined();
+    if (futurePlan === undefined || futureDay === undefined || futureSlot === undefined) {
+      throw new Error('expected a generated future training slot');
+    }
+    const replacement =
+      futureSlot?.exerciseSlug === 'barbell-hip-thrust'
+        ? 'single-leg-hip-thrust'
+        : 'barbell-hip-thrust';
+    const swapped = await client.json(
+      `/v1/plans/${futurePlan?.id}/days/${futureDay?.id}/slots/${futureSlot?.id}/swap`,
+      'PUT',
+      { exercise: { source: 'catalog', slug: replacement } },
+    );
+    expect(swapped.status).toBe(200);
+
+    const marked = await client.json(
+      `/v1/programs/${createdBody.program.id}/weeks/2026-07-27/break`,
+      'POST',
+      {},
+    );
+    expect(marked.status).toBe(200);
+    const shiftedWeek = (await marked.json()).program.weeks.find(
+      (week: { weekIndex?: number }) => week.weekIndex === 1,
+    ) as { plan?: { id: string; days: typeof futurePlan.days } } | undefined;
+    expect(shiftedWeek?.plan).toBeDefined();
+    if (shiftedWeek?.plan === undefined) throw new Error('expected shifted training plan');
+    const shiftedPlan = shiftedWeek.plan;
+    expect(shiftedPlan.id).toBe(futurePlan.id);
+    const shiftedSlot = shiftedPlan.days
+      .flatMap((day) => day.sessions)
+      .filter((session) => session.kind === 'training')
+      .flatMap((session) => session.blocks ?? [])
+      .flatMap((block) => block.slots)
+      .find((slot) => slot.id === futureSlot?.id);
+    expect(shiftedSlot?.exerciseSlug).toBe(replacement);
+
+    const followUp = await client.json(
+      `/v1/plans/${shiftedPlan.id}/days/${futureDay.id}/slots/${futureSlot.id}/swap`,
+      'PUT',
+      { exercise: { source: 'catalog', slug: futureSlot?.exerciseSlug } },
+    );
+    expect(followUp.status).toBe(200);
+  });
+
   it('preserves the default plan across break replanning', async () => {
     const created = await client.json('/v1/programs', 'POST', input);
     const program = (await created.json()) as {

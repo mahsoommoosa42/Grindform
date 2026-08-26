@@ -109,6 +109,7 @@ const ExerciseSlotSnapshotSchema = z.object({
   exerciseSlug: ExerciseSlugSchema,
   name: z.string().min(1).max(120),
   scheme: RepSchemeSchema,
+  baseSets: z.number().int().positive().optional(),
   primaryMuscles: z.array(MuscleGroupSchema).max(8),
   pyramid: z.boolean().optional(),
   superset: SupersetRefSnapshotSchema.optional(),
