@@ -118,8 +118,8 @@ export type Lift = z.infer<typeof LiftSchema>;
 /** A user-entered recent set from which a personal-record 1RM is derived. */
 export const PersonalRecordInputSchema = z.object({
   lift: LiftSchema,
-  weightKg: z.number().finite().gt(0),
-  reps: z.number().int().min(1),
+  weightKg: z.number().finite().gt(0).max(500),
+  reps: z.number().int().min(1).max(20),
   achievedOn: z.string().date().optional(),
 });
 export type PersonalRecordInput = z.infer<typeof PersonalRecordInputSchema>;

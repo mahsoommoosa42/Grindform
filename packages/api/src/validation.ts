@@ -222,8 +222,8 @@ export const SettingsBodySchema = z.object({
 
 /** Body for replacing one canonical-lift personal record. */
 export const PersonalRecordBodySchema = z.object({
-  weightKg: z.number().finite().gt(0),
-  reps: z.number().int().min(1),
+  weightKg: z.number().finite().gt(0).max(500),
+  reps: z.number().int().min(1).max(20),
   achievedOn: z.string().date().optional(),
 });
 

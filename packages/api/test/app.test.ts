@@ -473,11 +473,31 @@ describe('Grindform API', () => {
 
     it('validates lift paths and bodies, then deletes records', async () => {
       expect((await client.json('/v1/personal-records/not-a-lift', 'DELETE', {})).status).toBe(400);
+      const invalid = await client.json('/v1/personal-records/bench_press', 'PUT', {
+        weightKg: 0,
+        reps: 1,
+      });
+      expect(invalid.status).toBe(400);
+      expect(await invalid.json()).toEqual({
+        error: {
+          code: 'VALIDATION',
+          message: 'invalid personal record',
+          details: expect.anything(),
+        },
+      });
       expect(
         (
           await client.json('/v1/personal-records/bench_press', 'PUT', {
-            weightKg: 0,
+            weightKg: 501,
             reps: 1,
+          })
+        ).status,
+      ).toBe(400);
+      expect(
+        (
+          await client.json('/v1/personal-records/bench_press', 'PUT', {
+            weightKg: 80,
+            reps: 21,
           })
         ).status,
       ).toBe(400);

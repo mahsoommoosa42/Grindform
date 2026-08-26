@@ -67,7 +67,17 @@ describe('personal-record schemas', () => {
       PersonalRecordInputSchema.safeParse({ lift: 'bench_press', weightKg: 0, reps: 1 }).success,
     ).toBe(false);
     expect(
+      PersonalRecordInputSchema.safeParse({ lift: 'bench_press', weightKg: 500, reps: 20 }).success,
+    ).toBe(true);
+    expect(
+      PersonalRecordInputSchema.safeParse({ lift: 'bench_press', weightKg: 500.1, reps: 1 })
+        .success,
+    ).toBe(false);
+    expect(
       PersonalRecordInputSchema.safeParse({ lift: 'bench_press', weightKg: 80, reps: 1.5 }).success,
+    ).toBe(false);
+    expect(
+      PersonalRecordInputSchema.safeParse({ lift: 'bench_press', weightKg: 80, reps: 21 }).success,
     ).toBe(false);
     expect(
       PersonalRecordInputSchema.safeParse({

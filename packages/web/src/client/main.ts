@@ -273,6 +273,8 @@ interface SlotUiState {
   recentReps: number | null;
   profileOneRepMax: number | undefined;
   prescriptionSource: 'personal-record' | 'recent' | null;
+  /** Whether the user has edited or logged any rows in this slot. */
+  setsTouched: boolean;
   pyramid: boolean;
   warmups: number;
   sets: EditableSet[];
@@ -1066,8 +1068,15 @@ export class GfApp extends LitElement {
     const draft = this.personalRecordDrafts[lift];
     const weightKg = Number(draft.weightKg);
     const reps = Number(draft.reps);
-    if (!Number.isFinite(weightKg) || weightKg <= 0 || !Number.isInteger(reps) || reps < 1) {
-      this.personalRecordsError = 'Enter a positive weight and whole-number reps.';
+    if (
+      !Number.isFinite(weightKg) ||
+      weightKg <= 0 ||
+      weightKg > 500 ||
+      !Number.isInteger(reps) ||
+      reps < 1 ||
+      reps > 20
+    ) {
+      this.personalRecordsError = 'Enter a weight up to 500 kg and 1–20 reps.';
       return;
     }
     this.personalRecordsBusy = true;
@@ -1080,6 +1089,7 @@ export class GfApp extends LitElement {
       });
       this.personalRecords = result.records;
       this.strengthProfile = result.profile;
+      this.refreshUntouchedSlotState();
       this.personalRecordsError = null;
     } catch (err) {
       this.personalRecordsError =
@@ -1096,6 +1106,7 @@ export class GfApp extends LitElement {
       const result = await api.deletePersonalRecord(lift);
       this.personalRecords = result.records;
       this.strengthProfile = result.profile;
+      this.refreshUntouchedSlotState();
       this.personalRecordDrafts = {
         ...this.personalRecordDrafts,
         [lift]: emptyPersonalRecordDraft(),
@@ -1442,6 +1453,47 @@ export class GfApp extends LitElement {
       : null;
   }
 
+  /** Refresh PR-derived rows without replacing tracker rows the user touched. */
+  private refreshUntouchedSlotState(): void {
+    if (this.plan === null) return;
+    const slots = new Map<string, ExerciseSlot>();
+    for (const day of this.plan.days) {
+      for (const session of day.sessions) {
+        if (session.kind !== 'training') continue;
+        for (const block of session.blocks) {
+          for (const slot of block.slots) slots.set(slot.id, slot);
+        }
+      }
+    }
+    const next = { ...this.slotState };
+    let changed = false;
+    for (const [slotId, current] of Object.entries(this.slotState)) {
+      const slot = slots.get(slotId);
+      if (slot === undefined || current.setsTouched) continue;
+      const profileOneRepMax = this.profileMaxForSlot(slot);
+      next[slotId] = {
+        ...current,
+        profileOneRepMax,
+        prescriptionSource: this.prescriptionSourceForSlot(
+          slot,
+          current.recentWeight,
+          current.recentReps,
+        ),
+        sets: buildSetRows(
+          slot,
+          this.goalForDay(),
+          profileOneRepMax,
+          current.recentWeight,
+          current.recentReps,
+          current.pyramid,
+          current.warmups,
+        ),
+      };
+      changed = true;
+    }
+    if (changed) this.slotState = next;
+  }
+
   /** Seed per-slot tracker state for a day (recent set, options, set rows). */
   private initSlotState(day: PlanDay): void {
     const next: Record<string, SlotUiState> = { ...this.slotState };
@@ -1460,6 +1512,7 @@ export class GfApp extends LitElement {
           recentReps,
           profileOneRepMax,
           prescriptionSource: this.prescriptionSourceForSlot(slot, recentWeight, recentReps),
+          setsTouched: false,
           pyramid,
           warmups,
           sets: buildSetRows(
@@ -1837,7 +1890,7 @@ export class GfApp extends LitElement {
     if (current === undefined) return;
     const value = raw === '' ? null : Number(raw);
     const sets = current.sets.map((s, i) => (i === index ? { ...s, [field]: value } : s));
-    this.slotState = { ...this.slotState, [slotId]: { ...current, sets } };
+    this.slotState = { ...this.slotState, [slotId]: { ...current, sets, setsTouched: true } };
   }
 
   /** Toggle a warm-up row's local "done" tick (warm-ups aren't logged). */
@@ -1876,6 +1929,10 @@ export class GfApp extends LitElement {
       });
       // Remember the heaviest working set as the "recent set" for next time.
       if (loadKg > 0) writeRecent(slot.exerciseSlug, loadKg, reps);
+      this.slotState = {
+        ...this.slotState,
+        [slot.id]: { ...state, setsTouched: true },
+      };
       await this.refreshProgress(dayId);
     } catch (err) {
       this.error = err instanceof ApiError ? err.message : 'Could not save that set.';
@@ -2494,6 +2551,7 @@ export class GfApp extends LitElement {
                     <input
                       type="number"
                       min="0.1"
+                      max="500"
                       step="0.5"
                       data-testid=${`pr-weight-${lift}`}
                       .value=${draft.weightKg}
@@ -2510,6 +2568,7 @@ export class GfApp extends LitElement {
                     <input
                       type="number"
                       min="1"
+                      max="20"
                       step="1"
                       data-testid=${`pr-reps-${lift}`}
                       .value=${draft.reps}
