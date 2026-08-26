@@ -376,6 +376,67 @@ describe('program replanning', () => {
     });
     const returning = replanned.weeks.find((week) => week.weekIndex === 3)?.plan as WeeklyPlan;
     expect(trainingSlots(returning).some((slot) => slot.id === 'slt_extra_finisher')).toBe(true);
+    expect(
+      returning.days.some((day) =>
+        day.sessions.some(
+          (session) =>
+            session.kind === 'training' &&
+            session.blocks.some(
+              (block, blockIndex) =>
+                block.slots.length > 0 &&
+                session.blocks
+                  .slice(0, blockIndex)
+                  .some((priorBlock) => priorBlock.type === 'cooldown'),
+            ),
+        ),
+      ),
+    ).toBe(false);
+
+    const withoutCooldown = (plan: WeeklyPlan): WeeklyPlan => ({
+      ...plan,
+      days: plan.days.map((day) => ({
+        ...day,
+        sessions: day.sessions.map((session) =>
+          session.kind === 'training'
+            ? { ...session, blocks: session.blocks.filter((block) => block.type !== 'cooldown') }
+            : session,
+        ),
+      })),
+    });
+    const noCooldownReplanned = replanProgram({
+      program: {
+        ...program,
+        basePlan: withoutCooldown(expandedBase),
+        weeks: program.weeks.map((week, index) =>
+          index === 3 ? { ...week, plan: withoutCooldown(editedPersistedDeload) } : week,
+        ),
+      },
+      breakWeeks: ['2026-07-27'],
+      todayWeek: '2026-07-06',
+    });
+    const noCooldownReturning = noCooldownReplanned.weeks.find((week) => week.weekIndex === 3)
+      ?.plan as WeeklyPlan;
+    expect(
+      trainingSlots(noCooldownReturning).some((slot) => slot.id === 'slt_extra_finisher'),
+    ).toBe(true);
+  });
+
+  it('ignores persisted plans with a non-positive load index', () => {
+    const program = generateProgram(input({ weeks: 2 }));
+    const persisted = program.weeks[1]?.plan as WeeklyPlan;
+    const invalidPersisted = { ...persisted, loadIndex: 0 };
+    const replanned = replanProgram({
+      program: {
+        ...program,
+        weeks: program.weeks.map((week, index) =>
+          index === 1 ? { ...week, plan: invalidPersisted } : week,
+        ),
+      },
+      breakWeeks: [],
+      todayWeek: '2026-07-06',
+    });
+    expect(replanned.weeks[1]?.plan?.id).toBe(program.baselineWeeks[1]?.plan?.id);
+    expect(replanned.weeks[1]?.loadIndex).toBe(program.weeks[1]?.loadIndex);
   });
 
   it('does not restore a finisher deliberately removed at full load', () => {

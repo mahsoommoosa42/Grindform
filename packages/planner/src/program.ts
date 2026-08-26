@@ -192,12 +192,21 @@ interface SlotBearingBlock {
   readonly ordinal: number;
 }
 
+interface ExerciseSelectionBlock {
+  readonly type: SessionBlock['type'];
+  readonly ordinal: number;
+  readonly slots: readonly ExerciseSlot['exerciseSlug'][];
+}
+
+type ExerciseSelectionSession = readonly ExerciseSelectionBlock[] | PlanSession['kind'];
+type ExerciseSelection = readonly (readonly ExerciseSelectionSession[])[];
+
 const slotBearingBlocks = (blocks: readonly SessionBlock[]): readonly SlotBearingBlock[] =>
   blocks.flatMap((block, index) =>
     block.slots.length === 0 ? [] : [{ block, ordinal: blockOrdinal(blocks, index) }],
   );
 
-const exerciseSelection = (plan: WeeklyPlan): unknown =>
+const exerciseSelection = (plan: WeeklyPlan): ExerciseSelection =>
   plan.days.map((day) =>
     day.sessions.map((session) =>
       session.kind === 'training'
@@ -230,14 +239,17 @@ const restoreConditioningSlots = (plan: WeeklyPlan, source: WeeklyPlan): WeeklyP
         const ordinal = blockOrdinal(sourceSession.blocks, sourceBlockIndex);
         const targetBlock = blockWithKey(blocks, sourceBlock, ordinal);
         if (targetBlock === undefined) {
-          blocks.push({
+          const restoredBlock = {
             ...sourceBlock,
             slots: conditioning,
             estMinutes: conditioning.reduce(
               (sum, slot) => sum + estimateSlotMinutes(slot.scheme),
               0,
             ),
-          });
+          };
+          const cooldownAt = blocks.findIndex((block) => block.type === 'cooldown');
+          const insertionAt = cooldownAt === -1 ? blocks.length : cooldownAt;
+          blocks.splice(insertionAt, 0, restoredBlock);
           return;
         }
         const targetIndex = blocks.indexOf(targetBlock);
@@ -389,9 +401,10 @@ export const replanProgram = ({ program, breakWeeks, todayWeek }: ReplanInput): 
           : baseline.loadIndex;
       const persisted = persistedByWeekIndex.get(baselineIndex);
       const persistedLoadIndex = persisted?.loadIndex ?? 1;
-      const reference = scalePlanLoad(program.basePlan, persistedLoadIndex);
-      const edited = !sameExerciseSelection(persisted ?? reference, reference);
-      const template = edited && persisted !== undefined ? persisted : program.basePlan;
+      const usablePersisted = persistedLoadIndex > 0 ? persisted : undefined;
+      const reference = scalePlanLoad(program.basePlan, usablePersisted?.loadIndex ?? 1);
+      const edited = !sameExerciseSelection(usablePersisted ?? reference, reference);
+      const template = edited && usablePersisted !== undefined ? usablePersisted : program.basePlan;
       const templateLoadIndex = edited ? persistedLoadIndex : 1;
       const loadIndex = Math.max(
         curve.deloadLoadIndex,
@@ -402,7 +415,7 @@ export const replanProgram = ({ program, breakWeeks, todayWeek }: ReplanInput): 
         scaled = restoreConditioningSlots(scaled, scalePlanLoad(program.basePlan, loadIndex));
       }
       const plan = withMetadata(
-        rekeyPlanIds(scaled, persisted ?? (baseline.plan as WeeklyPlan)),
+        rekeyPlanIds(scaled, usablePersisted ?? (baseline.plan as WeeklyPlan)),
         baselineIndex,
         kind,
         loadIndex,
