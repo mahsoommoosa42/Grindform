@@ -271,6 +271,7 @@ interface SlotUiState {
   /** Recent best set weight, used to estimate 1RM and prescribe load. */
   recentWeight: number | null;
   recentReps: number | null;
+  profileOneRepMax: number | undefined;
   prescriptionSource: 'personal-record' | 'recent' | null;
   pyramid: boolean;
   warmups: number;
@@ -296,6 +297,9 @@ const emptyPersonalRecordDraft = (): PersonalRecordDraft => ({
   reps: '',
   achievedOn: '',
 });
+
+/** Round a max to a readable half-kilogram increment without changing storage. */
+const displayOneRepMax = (value: number): number => Math.round(value * 2) / 2;
 
 /** Default warm-up sets: a couple for heavy mains, none for accessories. */
 const defaultWarmups = (slot: ExerciseSlot): number => (slot.pyramid === true ? 2 : 0);
@@ -509,6 +513,7 @@ export class GfApp extends LitElement {
     pickerBusy: { state: true },
     pickerError: { state: true },
     personalRecords: { state: true },
+    strengthProfile: { state: true },
     personalRecordDrafts: { state: true },
     personalRecordsBusy: { state: true },
     personalRecordsError: { state: true },
@@ -1376,7 +1381,10 @@ export class GfApp extends LitElement {
     this.busy = true;
     this.error = null;
     try {
-      await this.loadExercises();
+      if (this.catalog.length === 0) {
+        // Tracker prescriptions need catalog lift-group mappings for PR-derived loads.
+        await this.loadExercises();
+      }
       const request = {
         goal: this.goal,
         experience: this.experience,
@@ -1450,6 +1458,7 @@ export class GfApp extends LitElement {
         next[slot.id] = {
           recentWeight,
           recentReps,
+          profileOneRepMax,
           prescriptionSource: this.prescriptionSourceForSlot(slot, recentWeight, recentReps),
           pyramid,
           warmups,
@@ -1780,6 +1789,7 @@ export class GfApp extends LitElement {
       sets: current.sets.map((s) => ({ ...s })),
     };
     mutate(next);
+    next.profileOneRepMax = this.profileMaxForSlot(slot);
     next.sets = buildSetRows(
       slot,
       this.goalForDay(),
@@ -2535,7 +2545,7 @@ export class GfApp extends LitElement {
                 ${entry === undefined
                   ? nothing
                   : html`<p class="pr-result" data-testid=${`pr-orm-${lift}`}>
-                      1RM: <strong>${entry.oneRepMaxKg} kg</strong>
+                      1RM: <strong>${displayOneRepMax(entry.oneRepMaxKg)} kg</strong>
                       ${measured
                         ? nothing
                         : html`<span class="hint">estimated from your other PRs</span>`}
@@ -3753,12 +3763,11 @@ export class GfApp extends LitElement {
     `;
   }
 
-  /** A short "1RM ≈ … → … kg" estimate line for the prescribed working load. */
+  /** A short 1RM estimate line for the prescribed working load. */
   private renderEstimate(state: SlotUiState): TemplateResult {
     if (state.prescriptionSource === 'personal-record') {
-      const max = state.sets.find((row) => row.kind === 'working')?.weight;
       return html`<small class="estimate" data-testid="pr-prescription">
-        PR-derived load${max === null || max === undefined ? nothing : html` · 1RM profile`}
+        1RM ≈ ${displayOneRepMax(state.profileOneRepMax!)} kg · from your PRs
       </small>`;
     }
     if (state.recentWeight === null || state.recentReps === null) return html`${nothing}`;

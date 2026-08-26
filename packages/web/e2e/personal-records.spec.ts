@@ -24,6 +24,6 @@ test('uses a bench PR to estimate the profile and prescribe tracker loads', asyn
   await generatePlan(page);
   await tapOrClick(page, 'track-mon');
   await expect(page.getByTestId('tracker')).toBeVisible();
-  await expect(page.getByTestId('pr-prescription').first()).toContainText('PR-derived');
+  await expect(page.getByTestId('pr-prescription').first()).toContainText('from your PRs');
   await expect(page.locator('input[data-testid^="set-weight-"]').first()).not.toHaveValue('');
 });
