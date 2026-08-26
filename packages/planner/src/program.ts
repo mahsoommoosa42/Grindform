@@ -156,13 +156,17 @@ const slotRole = (slot: ExerciseSlot): 'main' | 'accessory' | 'conditioning' => 
   return slot.scheme.repsHigh >= 18 ? 'conditioning' : 'accessory';
 };
 
-const scaleSlot = (slot: ExerciseSlot, loadIndex: number): ExerciseSlot => ({
-  ...slot,
-  scheme: {
-    ...slot.scheme,
-    sets: Math.max(1, Math.round(slot.scheme.sets * loadIndex)),
-  },
-});
+const scaleSlot = (slot: ExerciseSlot, loadIndex: number): ExerciseSlot => {
+  const baseSets = slot.baseSets ?? slot.scheme.sets;
+  return {
+    ...slot,
+    baseSets,
+    scheme: {
+      ...slot.scheme,
+      sets: Math.max(1, Math.round(baseSets * loadIndex)),
+    },
+  };
+};
 
 const scaleTrainingSession = (session: TrainingSession, loadIndex: number): TrainingSession => {
   const scaledBlocks: SessionBlock[] = session.blocks
@@ -254,8 +258,16 @@ const restoreConditioningSlots = (plan: WeeklyPlan, source: WeeklyPlan): WeeklyP
         }
         const targetIndex = blocks.indexOf(targetBlock);
         const existingSlugs = new Set(targetBlock.slots.map((slot) => slot.exerciseSlug));
-        const missing = conditioning.filter((slot) => !existingSlugs.has(slot.exerciseSlug));
-        const slots = [...targetBlock.slots, ...missing];
+        const slots = [...targetBlock.slots];
+        sourceBlock.slots.forEach((sourceSlot, sourceSlotIndex) => {
+          if (
+            slotRole(sourceSlot) !== 'conditioning' ||
+            existingSlugs.has(sourceSlot.exerciseSlug)
+          ) {
+            return;
+          }
+          slots.splice(Math.min(sourceSlotIndex, slots.length), 0, sourceSlot);
+        });
         blocks[targetIndex] = {
           ...targetBlock,
           slots,
@@ -331,15 +343,14 @@ export const generateProgram = (input: ProgramGenerationInput): TrainingProgram 
 
 const capIndex = (
   template: WeeklyPlan,
-  templateLoadIndex: number,
+  _templateLoadIndex: number,
   target: number,
   previousLoads: readonly number[],
   maxAcwr: number,
 ): number => {
   const chronic = chronicLoad(previousLoads);
   if (chronic === 0) return target;
-  const scale = (index: number): WeeklyPlan =>
-    scalePlanLoad(template, index / Math.max(templateLoadIndex, Number.EPSILON));
+  const scale = (index: number): WeeklyPlan => scalePlanLoad(template, index);
   const targetLoad = planLoadUnits(scale(target));
   if (acuteChronicRatio(targetLoad, previousLoads) <= maxAcwr) return target;
   const maxLoad = chronic * maxAcwr;
@@ -410,7 +421,7 @@ export const replanProgram = ({ program, breakWeeks, todayWeek }: ReplanInput): 
         curve.deloadLoadIndex,
         capIndex(template, templateLoadIndex, target, previousLoads, curve.maxAcwr),
       );
-      let scaled = scalePlanLoad(template, loadIndex / Math.max(templateLoadIndex, Number.EPSILON));
+      let scaled = scalePlanLoad(template, loadIndex);
       if (edited && templateLoadIndex < 0.75 && loadIndex >= 0.75) {
         scaled = restoreConditioningSlots(scaled, scalePlanLoad(program.basePlan, loadIndex));
       }

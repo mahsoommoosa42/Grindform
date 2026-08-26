@@ -211,6 +211,37 @@ describe('program generation and scaling', () => {
       .find((block) => block.type === 'warmup')?.recommendations;
     expect(scaledWarmup).toEqual(originalWarmup);
   });
+
+  it('scales legacy slots from their current prescription and records a base set count', () => {
+    const program = generateProgram(input({ weeks: 1 }));
+    const original = program.basePlan;
+    const legacy: WeeklyPlan = {
+      ...original,
+      days: original.days.map((day) => ({
+        ...day,
+        sessions: day.sessions.map((session) =>
+          session.kind === 'training'
+            ? {
+                ...session,
+                blocks: session.blocks.map((block) => ({
+                  ...block,
+                  slots: block.slots.map(({ baseSets: _baseSets, ...slot }) => slot),
+                })),
+              }
+            : session,
+        ),
+      })),
+    };
+    const scaled = scalePlanLoad(legacy, 0.6);
+    const legacySlots = trainingSlots(legacy).filter((slot) => slot.scheme.repsHigh < 18);
+    const scaledSlots = trainingSlots(scaled);
+    expect(scaledSlots.map((slot) => slot.baseSets)).toEqual(
+      legacySlots.map((slot) => slot.scheme.sets),
+    );
+    expect(scaledSlots.map((slot) => slot.scheme.sets)).toEqual(
+      legacySlots.map((slot) => Math.max(1, Math.round(slot.scheme.sets * 0.6))),
+    );
+  });
 });
 
 describe('program replanning', () => {
@@ -307,6 +338,98 @@ describe('program replanning', () => {
     expect(trainingSlots(shiftedRemoved).map((slot) => slot.id)).not.toContain(accessory?.id);
   });
 
+  it('keeps untouched conditioning slots at an absolute capped load', () => {
+    const program = generateProgram(
+      input({
+        weeks: 8,
+        curve: { ...DEFAULT_PROGRAM_CURVE, maxAcwr: 1.4 },
+      }),
+    );
+    const original = program.weeks[2]?.plan as WeeklyPlan;
+    const edited = updateSlot(
+      original,
+      (slot) => slot.id === trainingSlots(original)[0]?.id,
+      (slot) => ({
+        ...slot,
+        exerciseSlug: 'edited-absolute-load' as ExerciseSlot['exerciseSlug'],
+      }),
+    );
+    const replanned = replanProgram({
+      program: {
+        ...program,
+        weeks: program.weeks.map((week, index) => (index === 2 ? { ...week, plan: edited } : week)),
+      },
+      breakWeeks: ['2026-07-06'],
+      todayWeek: '2026-07-06',
+    });
+    const returning = replanned.weeks.find((week) => week.weekIndex === 2);
+    expect(returning?.loadIndex).toBeGreaterThan(0.75);
+    expect(
+      trainingSlots(returning?.plan as WeeklyPlan)
+        .filter((slot) => slot.scheme.repsHigh >= 18)
+        .map((slot) => slot.exerciseSlug),
+    ).toEqual(
+      trainingSlots(scalePlanLoad(program.basePlan, returning?.loadIndex ?? 0))
+        .filter((slot) => slot.scheme.repsHigh >= 18)
+        .map((slot) => slot.exerciseSlug),
+    );
+  });
+
+  it('scales edited plans from base sets across repeated replans', () => {
+    const program = generateProgram(input({ weeks: 8 }));
+    const original = program.weeks[2]?.plan as WeeklyPlan;
+    const edited = updateSlot(
+      original,
+      (slot) => slot.id === trainingSlots(original)[0]?.id,
+      (slot) => ({
+        ...slot,
+        exerciseSlug: 'edited-repeated-load' as ExerciseSlot['exerciseSlug'],
+      }),
+    );
+    const stored = {
+      ...program,
+      weeks: program.weeks.map((week, index) => (index === 2 ? { ...week, plan: edited } : week)),
+    };
+    const first = replanProgram({
+      program: stored,
+      breakWeeks: ['2026-07-06'],
+      todayWeek: '2026-07-06',
+    });
+    const second = replanProgram({
+      program: first,
+      breakWeeks: ['2026-07-06'],
+      todayWeek: '2026-07-06',
+    });
+    const firstPlan = first.weeks.find((week) => week.weekIndex === 2)?.plan as WeeklyPlan;
+    const secondPlan = second.weeks.find((week) => week.weekIndex === 2)?.plan as WeeklyPlan;
+    const expectedFirst = scalePlanLoad(
+      program.basePlan,
+      first.weeks.find((week) => week.weekIndex === 2)?.loadIndex ?? 0,
+    );
+    const expectedSecond = scalePlanLoad(
+      program.basePlan,
+      second.weeks.find((week) => week.weekIndex === 2)?.loadIndex ?? 0,
+    );
+    expect(
+      trainingSlots(firstPlan)
+        .slice(1)
+        .map((slot) => slot.scheme.sets),
+    ).toEqual(
+      trainingSlots(expectedFirst)
+        .slice(1)
+        .map((slot) => slot.scheme.sets),
+    );
+    expect(
+      trainingSlots(secondPlan)
+        .slice(1)
+        .map((slot) => slot.scheme.sets),
+    ).toEqual(
+      trainingSlots(expectedSecond)
+        .slice(1)
+        .map((slot) => slot.scheme.sets),
+    );
+  });
+
   it('restores dropped conditioning for an edited deload template', () => {
     const program = generateProgram(input({ weeks: 4 }));
     const deload = program.weeks[3]?.plan as WeeklyPlan;
@@ -376,6 +499,18 @@ describe('program replanning', () => {
     });
     const returning = replanned.weeks.find((week) => week.weekIndex === 3)?.plan as WeeklyPlan;
     expect(trainingSlots(returning).some((slot) => slot.id === 'slt_extra_finisher')).toBe(true);
+    const sourceAccessory = expandedBase.days[0]?.sessions
+      .find((session) => session.kind === 'training')
+      ?.blocks.find((block) => block.type === 'accessory');
+    const returningAccessory = returning.days[0]?.sessions
+      .find((session) => session.kind === 'training')
+      ?.blocks.find((block) => block.type === 'accessory');
+    expect(returningAccessory?.slots.map((slot) => slot.exerciseSlug)).toEqual(
+      sourceAccessory?.slots.map((slot) => slot.exerciseSlug),
+    );
+    expect(returningAccessory?.slots.map((slot) => slot.superset)).toEqual(
+      sourceAccessory?.slots.map((slot) => slot.superset),
+    );
     expect(
       returning.days.some((day) =>
         day.sessions.some(

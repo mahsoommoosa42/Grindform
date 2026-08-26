@@ -47,6 +47,8 @@ export interface ExerciseSlot {
   readonly name: string;
   /** Sets/reps/rest for this slot, derived from the goal profile. */
   readonly scheme: RepScheme;
+  /** Unscaled, load-index-1 set count used for absolute load scaling. */
+  readonly baseSets?: number;
   /** Denormalised primary muscles, used for volume attribution. */
   readonly primaryMuscles: readonly MuscleGroup[];
   /** Whether this slot defaults to a pyramid (weight up, reps down). */
