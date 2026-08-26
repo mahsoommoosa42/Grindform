@@ -1,4 +1,4 @@
--- 0007_personal_records.sql
+-- 0008_personal_records.sql
 -- Per-user canonical-lift personal records and their derived 1RMs.
 
 CREATE TABLE personal_records (
