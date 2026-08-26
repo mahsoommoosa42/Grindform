@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Hono } from 'hono';
 
 import { parseUserId } from '@grindform/core';
-import { setUserStatus } from '@grindform/db';
+import { listPersonalRecords, setUserStatus } from '@grindform/db';
 import type { Db } from '@grindform/db';
 
 import type { AppEnv } from '../src/context.ts';
@@ -48,6 +48,10 @@ describe('GDPR self-service', () => {
         theme: 'girlypop',
         preferences: { units: 'kg' },
       });
+      await client.json('/v1/personal-records/bench_press', 'PUT', {
+        weightKg: 80,
+        reps: 3,
+      });
       await seedPlanWithLog(client);
 
       const res = await client.request('/v1/account/export');
@@ -58,20 +62,29 @@ describe('GDPR self-service', () => {
         termsAcceptedAt: string;
         settings: { theme: string } | null;
         plans: { plan: { id: string }; logs: unknown[] }[];
+        personalRecords: { lift: string; oneRepMaxKg: number }[];
       };
       expect(body.account.email).toBe('gargi@example.com');
       expect(typeof body.termsAcceptedAt).toBe('string');
       expect(body.settings?.theme).toBe('girlypop');
       expect(body.plans).toHaveLength(1);
       expect(body.plans[0]?.logs.length).toBeGreaterThan(0);
+      expect(body.personalRecords).toEqual([
+        expect.objectContaining({ lift: 'bench_press', oneRepMaxKg: 88 }),
+      ]);
     });
 
     it('exports null settings when none were saved', async () => {
       const client = await registerClient(app);
       const res = await client.request('/v1/account/export');
-      const body = (await res.json()) as { settings: unknown; plans: unknown[] };
+      const body = (await res.json()) as {
+        settings: unknown;
+        plans: unknown[];
+        personalRecords: unknown[];
+      };
       expect(body.settings).toBeNull();
       expect(body.plans).toEqual([]);
+      expect(body.personalRecords).toEqual([]);
     });
 
     it('requires authentication', async () => {
@@ -82,6 +95,10 @@ describe('GDPR self-service', () => {
   describe('account deletion', () => {
     it('erases the account and its data and invalidates the session', async () => {
       const client = await registerClient(app, 'gone@example.com');
+      await client.json('/v1/personal-records/bench_press', 'PUT', {
+        weightKg: 80,
+        reps: 1,
+      });
       await seedPlanWithLog(client);
 
       const res = await client.request('/v1/account', { method: 'DELETE' });
@@ -90,6 +107,7 @@ describe('GDPR self-service', () => {
 
       // The session is gone and the account can no longer log in.
       expect((await client.request('/v1/plans')).status).toBe(401);
+      expect(await listPersonalRecords(db, parseUserId(client.userId))).toEqual([]);
       const login = await app.request('/v1/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

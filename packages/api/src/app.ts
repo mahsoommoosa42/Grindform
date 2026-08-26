@@ -57,6 +57,8 @@ import {
   getDefaultPlan,
   getWeekAssignment,
   getSettings,
+  deletePersonalRecord,
+  listPersonalRecords,
   listCustomExercises,
   listPlanSummaries,
   listWeekAssignments,
@@ -65,8 +67,10 @@ import {
   unassignWeek,
   updateDaySessions,
   upsertSettings,
+  upsertPersonalRecord,
 } from '@grindform/db';
 import type { Db, Settings } from '@grindform/db';
+import { estimateOneRepMax, resolveStrengthProfile } from '@grindform/loadcalc';
 import {
   addSlotToSession,
   customExerciseSlug,
@@ -106,6 +110,8 @@ import {
   ExerciseQuerySchema,
   LogSetBodySchema,
   parseOrThrow,
+  LiftParamSchema,
+  PersonalRecordBodySchema,
   RestoreDaySessionsBodySchema,
   SettingsBodySchema,
   SlotIdParamSchema,
@@ -332,6 +338,40 @@ const serialiseSettings = (
   saved === undefined
     ? { theme: 'pulse', preferences: {} }
     : { theme: saved.theme, preferences: saved.preferences };
+
+const serialisePersonalRecord = (
+  row: Awaited<ReturnType<typeof listPersonalRecords>>[number],
+): {
+  lift: typeof row.lift;
+  weightKg: number;
+  reps: number;
+  oneRepMaxKg: number;
+  achievedOn?: string;
+  updatedAt: string;
+} => ({
+  lift: row.lift,
+  weightKg: row.weightKg,
+  reps: row.reps,
+  oneRepMaxKg: row.oneRepMaxKg,
+  ...(row.achievedOn === null ? {} : { achievedOn: row.achievedOn }),
+  updatedAt: row.updatedAt.toISOString(),
+});
+
+const personalRecordResponse = (
+  rows: Awaited<ReturnType<typeof listPersonalRecords>>,
+): {
+  records: ReturnType<typeof serialisePersonalRecord>[];
+  profile?: ReturnType<typeof resolveStrengthProfile>;
+} => {
+  const records = rows.map(serialisePersonalRecord);
+  if (records.length === 0) return { records };
+  return {
+    records,
+    profile: resolveStrengthProfile(
+      records.map(({ lift, oneRepMaxKg }) => ({ lift, oneRepMaxKg })),
+    ),
+  };
+};
 
 /** Build the Grindform HTTP API. */
 export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
@@ -709,6 +749,33 @@ export const createApp = (deps: ApiDeps): Hono<AppEnv> => {
       preferences: body.preferences,
     });
     return c.json({ settings: serialiseSettings(saved) });
+  });
+
+  app.get('/v1/personal-records', guard, async (c) => {
+    const records = await listPersonalRecords(db, c.get('auth').userId);
+    return c.json(personalRecordResponse(records));
+  });
+
+  app.put('/v1/personal-records/:lift', guard, async (c) => {
+    const lift = parseOrThrow(LiftParamSchema, c.req.param('lift'), 'lift');
+    const body = parseOrThrow(PersonalRecordBodySchema, await c.req.json(), 'personal record');
+    const oneRepMaxKg = estimateOneRepMax({ weight: body.weightKg, reps: body.reps });
+    await upsertPersonalRecord(db, c.get('auth').userId, {
+      lift,
+      weightKg: body.weightKg,
+      reps: body.reps,
+      oneRepMaxKg,
+      ...(body.achievedOn === undefined ? {} : { achievedOn: body.achievedOn }),
+    });
+    const records = await listPersonalRecords(db, c.get('auth').userId);
+    return c.json(personalRecordResponse(records));
+  });
+
+  app.delete('/v1/personal-records/:lift', guard, async (c) => {
+    const lift = parseOrThrow(LiftParamSchema, c.req.param('lift'), 'lift');
+    await deletePersonalRecord(db, c.get('auth').userId, lift);
+    const records = await listPersonalRecords(db, c.get('auth').userId);
+    return c.json(personalRecordResponse(records));
   });
 
   app.onError((err, c) => {

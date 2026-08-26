@@ -26,6 +26,9 @@ import type {
   PlanSummary,
   WeekAssignment,
   WeekResolution,
+  Lift,
+  PersonalRecord,
+  StrengthProfile,
 } from './types.ts';
 
 /** An error raised when the API responds with a non-2xx status. */
@@ -218,6 +221,28 @@ export const getSettings = (): Promise<{ settings: Settings }> => request('/v1/s
 /** Persist the chosen theme. */
 export const saveTheme = (theme: ThemeId): Promise<{ settings: Settings }> =>
   request('/v1/settings', { method: 'PATCH', body: JSON.stringify({ theme }) });
+
+/** Read the current account's personal records and resolved strength profile. */
+export const getPersonalRecords = (): Promise<{
+  records: PersonalRecord[];
+  profile?: StrengthProfile;
+}> => request('/v1/personal-records');
+
+/** Save one canonical-lift rep max. */
+export const savePersonalRecord = (
+  lift: Lift,
+  input: { weightKg: number; reps: number; achievedOn?: string },
+): Promise<{ records: PersonalRecord[]; profile: StrengthProfile }> =>
+  request(`/v1/personal-records/${lift}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+
+/** Remove one canonical-lift personal record. */
+export const deletePersonalRecord = (
+  lift: Lift,
+): Promise<{ records: PersonalRecord[]; profile?: StrengthProfile }> =>
+  request(`/v1/personal-records/${lift}`, { method: 'DELETE' });
 
 /** The current session's user, or `null` when not signed in. */
 export const me = (): Promise<{ user: PublicUser | null }> => request('/v1/auth/me');

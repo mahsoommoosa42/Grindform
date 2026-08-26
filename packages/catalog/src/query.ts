@@ -19,6 +19,7 @@ import type {
 
 import { EXERCISES } from './exercises.ts';
 import type { Exercise } from './types.ts';
+import type { LiftGroup } from './types.ts';
 
 /** Lookup index built once at module load. */
 const BY_SLUG: ReadonlyMap<ExerciseSlug, Exercise> = new Map(
@@ -30,6 +31,10 @@ export const allExercises = (): readonly Exercise[] => EXERCISES;
 
 /** Look up one exercise by slug; `undefined` if unknown. */
 export const getExercise = (slug: ExerciseSlug): Exercise | undefined => BY_SLUG.get(slug);
+
+/** Return the canonical-lift mapping for an exercise, when one is defined. */
+export const getLiftGroup = (slug: ExerciseSlug): LiftGroup | undefined =>
+  BY_SLUG.get(slug)?.liftGroup;
 
 /**
  * Look up one exercise by slug, throwing if it doesn't exist. Use when

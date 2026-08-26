@@ -10,6 +10,7 @@ export {
   customExercises,
   planDays,
   plans,
+  personalRecords,
   programs,
   sessions,
   setLogs,

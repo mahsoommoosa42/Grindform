@@ -43,4 +43,8 @@ export const MIGRATIONS: readonly Migration[] = [
     name: '0007_refresh_catalog_muscles',
     sqlText: readFileSync(join(migrationsDir, '0007_refresh_catalog_muscles.sql'), 'utf8'),
   },
+  {
+    name: '0008_personal_records',
+    sqlText: readFileSync(join(migrationsDir, '0008_personal_records.sql'), 'utf8'),
+  },
 ];

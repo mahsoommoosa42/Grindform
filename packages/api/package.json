@@ -21,6 +21,7 @@
     "@grindform/catalog": "workspace:*",
     "@grindform/core": "workspace:*",
     "@grindform/db": "workspace:*",
+    "@grindform/loadcalc": "workspace:*",
     "@grindform/planner": "workspace:*",
     "@grindform/tracker": "workspace:*",
     "hono": "4.6.14",

@@ -11,9 +11,16 @@ import type {
   ExerciseSlug,
   Experience,
   Goal,
+  Lift,
   MovementPattern,
   MuscleGroup,
 } from '@grindform/core';
+
+/** Canonical lift mapping for exercises with defensible 1RM carry-over. */
+export interface LiftGroup {
+  readonly lift: Lift;
+  readonly coefficient: number;
+}
 
 /**
  * A single library exercise. The generator reads these fields to pick
@@ -37,6 +44,8 @@ export interface Exercise {
   readonly pattern: MovementPattern;
   /** Whether the movement is a compound `main` lift, an `accessory`, etc. */
   readonly role: ExerciseRole;
+  /** Optional canonical-lift mapping used for load prescription. */
+  readonly liftGroup?: LiftGroup;
   /** True for single-limb work (the PDF's `3 × 8/s`). */
   readonly unilateral: boolean;
   /** Minimum experience the movement is appropriate for. */

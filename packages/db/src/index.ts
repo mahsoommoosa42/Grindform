@@ -11,6 +11,7 @@ export {
   customExercises,
   planDays,
   plans,
+  personalRecords,
   programs,
   sessions,
   setLogs,
@@ -66,6 +67,12 @@ export {
 export type { WeekAssignment } from './repos/weeks-repo.ts';
 export { getSettings, upsertSettings } from './repos/settings-repo.ts';
 export type { Settings, SettingsPatch } from './repos/settings-repo.ts';
+export {
+  deletePersonalRecord,
+  listPersonalRecords,
+  upsertPersonalRecord,
+} from './repos/personal-records-repo.ts';
+export type { PersonalRecordPatch, PersonalRecordRow } from './repos/personal-records-repo.ts';
 export {
   countAdmins,
   createUser,

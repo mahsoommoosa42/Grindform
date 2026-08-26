@@ -427,6 +427,100 @@ describe('Grindform API', () => {
       expect(res.status).toBe(400);
     });
   });
+
+  describe('personal records', () => {
+    it('returns no profile before records exist', async () => {
+      const res = await client.request('/v1/personal-records');
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ records: [] });
+    });
+
+    it('upserts records and returns measured plus estimated profile', async () => {
+      const put = await client.json('/v1/personal-records/back_squat', 'PUT', {
+        weightKg: 100,
+        reps: 1,
+        achievedOn: '2026-01-02',
+      });
+      expect(put.status).toBe(200);
+      const body = (await put.json()) as {
+        records: { lift: string; oneRepMaxKg: number; reps: number }[];
+        profile: { lift: string; oneRepMaxKg: number; source: string }[];
+      };
+      expect(body.records).toEqual([
+        expect.objectContaining({
+          lift: 'back_squat',
+          oneRepMaxKg: 100,
+          reps: 1,
+          achievedOn: '2026-01-02',
+        }),
+      ]);
+      expect(body.profile).toEqual(
+        expect.arrayContaining([
+          { lift: 'back_squat', oneRepMaxKg: 100, source: 'measured' },
+          { lift: 'bench_press', oneRepMaxKg: 75, source: 'estimated' },
+        ]),
+      );
+
+      const update = await client.json('/v1/personal-records/back_squat', 'PUT', {
+        weightKg: 105,
+        reps: 3,
+      });
+      expect(update.status).toBe(200);
+      expect(
+        ((await update.json()) as { records: { weightKg: number }[] }).records[0]?.weightKg,
+      ).toBe(105);
+    });
+
+    it('validates lift paths and bodies, then deletes records', async () => {
+      expect((await client.json('/v1/personal-records/not-a-lift', 'DELETE', {})).status).toBe(400);
+      const invalid = await client.json('/v1/personal-records/bench_press', 'PUT', {
+        weightKg: 0,
+        reps: 1,
+      });
+      expect(invalid.status).toBe(400);
+      expect(await invalid.json()).toEqual({
+        error: {
+          code: 'VALIDATION',
+          message: 'invalid personal record',
+          details: expect.anything(),
+        },
+      });
+      expect(
+        (
+          await client.json('/v1/personal-records/bench_press', 'PUT', {
+            weightKg: 501,
+            reps: 1,
+          })
+        ).status,
+      ).toBe(400);
+      expect(
+        (
+          await client.json('/v1/personal-records/bench_press', 'PUT', {
+            weightKg: 80,
+            reps: 21,
+          })
+        ).status,
+      ).toBe(400);
+      await client.json('/v1/personal-records/bench_press', 'PUT', {
+        weightKg: 80,
+        reps: 1,
+      });
+      const deleted = await client.json('/v1/personal-records/bench_press', 'DELETE', {});
+      expect(deleted.status).toBe(200);
+      expect(await deleted.json()).toEqual({ records: [] });
+    });
+
+    it('isolates records by authenticated user', async () => {
+      await client.json('/v1/personal-records/back_squat', 'PUT', {
+        weightKg: 100,
+        reps: 1,
+      });
+      const other = await registerClient(app, 'records-other@example.com');
+      expect(await other.request('/v1/personal-records').then((res) => res.json())).toEqual({
+        records: [],
+      });
+    });
+  });
 });
 
 interface FullPlan {
